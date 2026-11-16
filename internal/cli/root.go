@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/primandproper/docent/internal/app"
+	"github.com/primandproper/docent/internal/core"
 	"github.com/primandproper/docent/internal/logs"
 
 	"github.com/primandproper/primitives-go/v2/observability/logging"
@@ -57,6 +58,8 @@ type (
 		Streams Streams
 		// LogDir overrides where logs are written. Empty means the default.
 		LogDir string
+		// UserConfigPath overrides ~/.config/docent/config.json.
+		UserConfigPath string
 		// Args are the command-line arguments, without the program name.
 		Args []string
 	}
@@ -70,6 +73,7 @@ type (
 		logFile        io.Closer
 		systemLogger   *slog.Logger
 		logDir         string
+		userConfigPath string
 	}
 )
 
@@ -83,6 +87,7 @@ func Execute(ctx context.Context, opts *Options) int {
 		assets:         opts.Assets,
 		streams:        opts.Streams,
 		logDir:         opts.LogDir,
+		userConfigPath: opts.UserConfigPath,
 		tracerProvider: tracingnoop.NewTracerProvider(),
 	}
 	defer a.shutdown()
@@ -111,7 +116,10 @@ func Execute(ctx context.Context, opts *Options) int {
 }
 
 func (a *application) newRootCommand() *cobra.Command {
-	var logLevel string
+	var (
+		logLevel string
+		varFlags []string
+	)
 
 	root := &cobra.Command{
 		Use:   "docent [path]",
@@ -125,13 +133,26 @@ func (a *application) newRootCommand() *cobra.Command {
 			a.bootstrap(logLevel)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.open(cmd.Context(), args)
+			vars, err := parseVars(varFlags)
+			if err != nil {
+				return err
+			}
+
+			return a.open(cmd.Context(), args, vars)
 		},
 	}
 
+	root.Flags().StringArrayVar(&varFlags, "var", nil, "set a link variable, as name=value (repeatable)")
+
 	root.PersistentFlags().StringVar(&logLevel, "log-level", envOr(LogLevelEnvVar, string(logging.InfoLevel)), "log level: debug, info, warn or error")
 
-	root.AddCommand(a.newValidateCommand())
+	root.AddCommand(
+		a.newValidateCommand(),
+		a.newResolveCommand(),
+		a.newNewCommand(),
+		a.newSchemaCommand(),
+		a.newGuideCommand(),
+	)
 
 	return root
 }
@@ -176,7 +197,7 @@ func (a *application) log() logging.Logger {
 }
 
 // open starts the app rooted at the given folder.
-func (a *application) open(ctx context.Context, args []string) error {
+func (a *application) open(ctx context.Context, args []string, vars map[string]string) error {
 	path := "."
 	if len(args) > 0 {
 		path = args[0]
@@ -196,6 +217,7 @@ func (a *application) open(ctx context.Context, args []string) error {
 
 	return app.Run(ctx, &app.Options{
 		Root:           root,
+		VarFlags:       vars,
 		Assets:         a.assets,
 		Logger:         a.log(),
 		SystemLogger:   a.systemLogger,
@@ -209,4 +231,31 @@ func envOr(name, fallback string) string {
 	}
 
 	return fallback
+}
+
+// parseVars turns repeated name=value flags into a map.
+func parseVars(flags []string) (map[string]string, error) {
+	vars := make(map[string]string, len(flags))
+
+	for _, flag := range flags {
+		name, value, ok := strings.Cut(flag, "=")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("--var %q: want name=value", flag)
+		}
+
+		vars[name] = value
+	}
+
+	return vars, nil
+}
+
+// coreFor assembles the services for a folder.
+func (a *application) coreFor(root string, vars map[string]string) (*core.Core, error) {
+	return core.New(&core.Options{
+		Root:           root,
+		VarFlags:       vars,
+		UserConfigPath: a.userConfigPath,
+		Logger:         a.log(),
+		TracerProvider: a.tracerProvider,
+	})
 }

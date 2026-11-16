@@ -45,6 +45,8 @@ func run(t *testing.T, args ...string) (code int, stdout, stderr string) {
 		Args:    args,
 		Streams: Streams{Stdout: &out, Stderr: &errOut},
 		LogDir:  t.TempDir(),
+		// The tests must not read the config of whoever is running them.
+		UserConfigPath: filepath.Join(t.TempDir(), "config.json"),
 	})
 
 	return code, out.String(), errOut.String()
@@ -177,9 +179,10 @@ func TestRoot(T *testing.T) {
 		var out, errOut bytes.Buffer
 
 		code := Execute(t.Context(), &Options{
-			Args:    []string{"--log-level", "debug", "validate", root},
-			Streams: Streams{Stdout: &out, Stderr: &errOut},
-			LogDir:  logDir,
+			Args:           []string{"--log-level", "debug", "validate", root},
+			Streams:        Streams{Stdout: &out, Stderr: &errOut},
+			LogDir:         logDir,
+			UserConfigPath: filepath.Join(t.TempDir(), "config.json"),
 		})
 		must.Eq(t, ExitClean, code)
 		test.Eq(t, "0 errors, 0 warnings in 1 tour\n", out.String())

@@ -7,16 +7,19 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/primandproper/docent/internal/gitsrc"
+	"github.com/primandproper/docent/internal/core"
+	"github.com/primandproper/docent/internal/editor"
 	"github.com/primandproper/docent/internal/tour"
-	"github.com/primandproper/docent/internal/validate"
-	"github.com/primandproper/docent/internal/walk"
 
 	"github.com/primandproper/primitives-go/v2/observability/logging"
 	"github.com/primandproper/primitives-go/v2/observability/tracing"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+// ChangedEvent is emitted to the frontend when a tour, or a file beside one,
+// changes on disk.
+const ChangedEvent = "docent:changed"
 
 // Options configure the desktop app.
 type Options struct {
@@ -27,6 +30,8 @@ type Options struct {
 	// SystemLogger receives Wails' own messages. Nil discards them.
 	SystemLogger   *slog.Logger
 	TracerProvider tracing.Provider
+	// VarFlags are link variables given on the command line.
+	VarFlags map[string]string
 	// Root is the absolute path of the folder to open.
 	Root string
 }
@@ -34,11 +39,18 @@ type Options struct {
 // Run opens a window on the workspace and blocks until the app quits. It must
 // be called from the main goroutine: AppKit insists on the main thread.
 func Run(ctx context.Context, opts *Options) error {
-	source := gitsrc.NewWorkingTree(opts.Logger, opts.TracerProvider)
-	store := tour.NewStore(opts.Logger, opts.TracerProvider)
-	walker := walk.NewWalker(source, opts.Logger, opts.TracerProvider)
-	validator := validate.NewValidator(store, walker, opts.Logger, opts.TracerProvider)
-	service := NewService(opts.Root, store, walker, validator, opts.Logger, opts.TracerProvider)
+	services, err := core.New(&core.Options{
+		Root:           opts.Root,
+		VarFlags:       opts.VarFlags,
+		Logger:         opts.Logger,
+		TracerProvider: opts.TracerProvider,
+	})
+	if err != nil {
+		return fmt.Errorf("setting up: %w", err)
+	}
+
+	launcher := editor.NewLauncher(services.Config, opts.Logger, opts.TracerProvider)
+	service := NewService(opts.Root, services, launcher, opts.Logger, opts.TracerProvider)
 
 	systemLogger := opts.SystemLogger
 	if systemLogger == nil {
@@ -70,13 +82,20 @@ func Run(ctx context.Context, opts *Options) error {
 		URL:              "/",
 	})
 
+	// Live reload: the app is the preview for whoever is editing a tour.
+	// Without it the reader still has ⌘R, so a failed watch isn't fatal.
+	watchErr := tour.Watch(ctx, opts.Logger, func() { wails.Event.Emit(ChangedEvent) }, opts.Root, services.Config.TourPaths()...)
+	if watchErr != nil {
+		logging.EnsureLogger(opts.Logger).Error("watching tours for changes", watchErr)
+	}
+
 	// Ctrl-C in the launching terminal should close the window, not orphan it.
 	go func() {
 		<-ctx.Done()
 		wails.Quit()
 	}()
 
-	if err := wails.Run(); err != nil {
+	if err = wails.Run(); err != nil {
 		return fmt.Errorf("running the app: %w", err)
 	}
 

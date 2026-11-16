@@ -10,14 +10,17 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/primandproper/docent/internal/anchor"
+	"github.com/primandproper/docent/internal/core"
 	"github.com/primandproper/docent/internal/diag"
+	"github.com/primandproper/docent/internal/editor"
 	"github.com/primandproper/docent/internal/gitsrc"
+	"github.com/primandproper/docent/internal/links"
 	"github.com/primandproper/docent/internal/tour"
-	"github.com/primandproper/docent/internal/validate"
 	"github.com/primandproper/docent/internal/walk"
 
 	"github.com/primandproper/primitives-go/v2/observability"
@@ -27,6 +30,8 @@ import (
 
 const (
 	o11yName = "app_service"
+	// tourKey is the log key for the tour a call is about.
+	tourKey = "tour"
 
 	// maxFileSize is the largest file the code pane is sent. Past it the step
 	// says so instead of shipping the bytes to the webview.
@@ -38,6 +43,10 @@ var (
 	ErrUnknownTour = errors.New("not a tour in this workspace")
 	// ErrTourUnreadable is returned when a tour can't be parsed at all.
 	ErrTourUnreadable = errors.New("tour could not be read")
+	// ErrNotAFile is returned when a step with no file is asked to open in an editor.
+	ErrNotAFile = errors.New("this step doesn't point at a file")
+	// ErrBadVariable is returned for a variable or value the tour doesn't allow.
+	ErrBadVariable = errors.New("not a value this tour's variable accepts")
 )
 
 type (
@@ -58,7 +67,9 @@ type (
 		Title       string   `json:"title"`
 		Description string   `json:"description"`
 		Tags        []string `json:"tags"`
-		Steps       int      `json:"steps"`
+		// Repos are the logical names of the repos the tour touches.
+		Repos []string `json:"repos"`
+		Steps int      `json:"steps"`
 		// Errors and Warnings count the tour's diagnostics: its health.
 		Errors   int `json:"errors"`
 		Warnings int `json:"warnings"`
@@ -76,6 +87,20 @@ type (
 		Status anchor.Status `json:"status"`
 	}
 
+	// VarView is a link variable as the picker shows it.
+	VarView struct {
+		_           struct{} `json:"-"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		// Value is the effective value, and Source where it came from.
+		Value   string   `json:"value"`
+		Source  string   `json:"source"`
+		Choices []string `json:"choices"`
+		// Locked is set when the value was given on the command line, which
+		// outranks the picker.
+		Locked bool `json:"locked"`
+	}
+
 	// TourView is an opened tour.
 	TourView struct {
 		_           struct{}          `json:"-"`
@@ -83,6 +108,7 @@ type (
 		Diagnostics []diag.Diagnostic `json:"diagnostics"`
 		// Steps runs parallel to Tour.Steps.
 		Steps []StepSummary `json:"steps"`
+		Vars  []VarView     `json:"vars"`
 	}
 
 	// StepView is one step resolved against the code, ready to render.
@@ -97,38 +123,52 @@ type (
 		// can't be shown (binary, or too large).
 		Unavailable string `json:"unavailable"`
 		// Readme is the directory's README, for directory steps.
-		Readme   string          `json:"readme"`
-		Entries  []gitsrc.Entry  `json:"entries"`
-		Location anchor.Location `json:"location"`
-		Index    int             `json:"index"`
+		Readme string `json:"readme"`
+		// Body is the step's Markdown body file. When empty, the step's
+		// description is the narrative.
+		Body string `json:"body"`
+		// BodyProblem says why a body file couldn't be shown.
+		BodyProblem string `json:"bodyProblem"`
+		// Repo is the logical repo the step lives in, when the tour names one.
+		Repo string `json:"repo"`
+		// CloneCommand fetches the step's repo when it isn't checked out,
+		// quoted for pasting into a shell.
+		CloneCommand string          `json:"cloneCommand"`
+		Entries      []gitsrc.Entry  `json:"entries"`
+		Links        []links.Card    `json:"links"`
+		Location     anchor.Location `json:"location"`
+		Index        int             `json:"index"`
 	}
 
 	// Service is the API the frontend calls.
 	Service struct {
-		_         struct{}
-		store     tour.Store
-		walker    walk.Walker
-		validator validate.Validator
-		logger    logging.Logger
-		tracer    tracing.Tracer
-		open      map[string]*tour.Tour
-		root      string
-		known     []string
-		mu        sync.Mutex
+		_        struct{}
+		core     *core.Core
+		launcher editor.Launcher
+		logger   logging.Logger
+		tracer   tracing.Tracer
+		open     map[string]*tour.Tour
+		root     string
+		known    []string
+		mu       sync.Mutex
 	}
 )
 
 // NewService returns the frontend-facing service for a workspace root.
-func NewService(root string, store tour.Store, walker walk.Walker, validator validate.Validator, logger logging.Logger, tracerProvider tracing.Provider) *Service {
+func NewService(root string, services *core.Core, launcher editor.Launcher, logger logging.Logger, tracerProvider tracing.Provider) *Service {
 	return &Service{
-		root:      root,
-		store:     store,
-		walker:    walker,
-		validator: validator,
-		logger:    logging.NewNamedLogger(logger, o11yName),
-		tracer:    tracing.NewNamedTracer(tracerProvider, o11yName),
-		open:      map[string]*tour.Tour{},
+		root:     root,
+		core:     services,
+		launcher: launcher,
+		logger:   logging.NewNamedLogger(logger, o11yName),
+		tracer:   tracing.NewNamedTracer(tracerProvider, o11yName),
+		open:     map[string]*tour.Tour{},
 	}
+}
+
+// discover lists the workspace's tours, including the configured tour paths.
+func (s *Service) discover(ctx context.Context) ([]string, error) {
+	return s.core.Store.Discover(ctx, s.root, s.core.Config.TourPaths()...)
 }
 
 // Workspace reports the folder the app was opened on.
@@ -141,7 +181,7 @@ func (s *Service) ListTours(ctx context.Context) ([]TourSummary, error) {
 	ctx, span := s.tracer.StartSpan(ctx)
 	defer span.End()
 
-	paths, err := s.store.Discover(ctx, s.root)
+	paths, err := s.discover(ctx)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, s.logger, span, "discovering tours")
 	}
@@ -155,7 +195,7 @@ func (s *Service) ListTours(ctx context.Context) ([]TourSummary, error) {
 	for _, path := range paths {
 		summary, sumErr := s.summarize(ctx, path)
 		if sumErr != nil {
-			return nil, observability.PrepareAndLogError(sumErr, s.logger.WithValue("tour", path), span, "summarizing tour")
+			return nil, observability.PrepareAndLogError(sumErr, s.logger.WithValue(tourKey, path), span, "summarizing tour")
 		}
 
 		summaries = append(summaries, summary)
@@ -179,13 +219,13 @@ func (s *Service) ListTours(ctx context.Context) ([]TourSummary, error) {
 }
 
 func (s *Service) summarize(ctx context.Context, path string) (TourSummary, error) {
-	summary := TourSummary{Path: path, DisplayPath: path, Tags: []string{}}
+	summary := TourSummary{Path: path, DisplayPath: path, Tags: []string{}, Repos: []string{}}
 
 	if rel, err := filepath.Rel(s.root, path); err == nil && filepath.IsLocal(rel) {
 		summary.DisplayPath = rel
 	}
 
-	diags, err := s.validator.Tour(ctx, path)
+	diags, err := s.core.Validator.Tour(ctx, path)
 	if err != nil {
 		return summary, fmt.Errorf("validating tour: %w", err)
 	}
@@ -198,7 +238,7 @@ func (s *Service) summarize(ctx context.Context, path string) (TourSummary, erro
 		}
 	}
 
-	t, _, err := s.store.Load(ctx, path)
+	t, _, err := s.core.Store.Load(ctx, path)
 	if err != nil {
 		return summary, fmt.Errorf("loading tour: %w", err)
 	}
@@ -220,6 +260,10 @@ func (s *Service) summarize(ctx context.Context, path string) (TourSummary, erro
 		summary.Tags = t.Tags
 	}
 
+	for i := range t.Repos {
+		summary.Repos = append(summary.Repos, t.Repos[i].Name)
+	}
+
 	return summary, nil
 }
 
@@ -228,13 +272,13 @@ func (s *Service) OpenTour(ctx context.Context, path string) (*TourView, error) 
 	ctx, span := s.tracer.StartSpan(ctx)
 	defer span.End()
 
-	logger := s.logger.WithValue("tour", path)
+	logger := s.logger.WithValue(tourKey, path)
 
 	if err := s.checkKnown(ctx, path); err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "opening tour")
 	}
 
-	t, diags, err := s.store.Load(ctx, path)
+	t, diags, err := s.core.Store.Load(ctx, path)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "loading tour")
 	}
@@ -248,13 +292,13 @@ func (s *Service) OpenTour(ctx context.Context, path string) (*TourView, error) 
 		return nil, observability.PrepareAndLogError(fmt.Errorf("%w: %s", ErrTourUnreadable, message), logger, span, "opening tour")
 	}
 
-	view := &TourView{Tour: t, Diagnostics: diags, Steps: make([]StepSummary, len(t.Steps))}
+	view := &TourView{Tour: t, Diagnostics: diags, Steps: make([]StepSummary, len(t.Steps)), Vars: s.vars(t)}
 	if view.Diagnostics == nil {
 		view.Diagnostics = []diag.Diagnostic{}
 	}
 
 	for i := range t.Steps {
-		step, stepErr := s.walker.Step(ctx, t, i)
+		step, stepErr := s.core.Walker.Step(ctx, t, i)
 		if stepErr != nil {
 			return nil, observability.PrepareAndLogError(stepErr, logger, span, "resolving step %d", i)
 		}
@@ -277,7 +321,7 @@ func (s *Service) Step(ctx context.Context, path string, index int) (*StepView, 
 	ctx, span := s.tracer.StartSpan(ctx)
 	defer span.End()
 
-	logger := s.logger.WithValues(map[string]any{"tour": path, "step": index})
+	logger := s.logger.WithValues(map[string]any{tourKey: path, "step": index})
 
 	s.mu.Lock()
 	t, ok := s.open[path]
@@ -287,17 +331,22 @@ func (s *Service) Step(ctx context.Context, path string, index int) (*StepView, 
 		return nil, observability.PrepareAndLogError(fmt.Errorf("%q is not open: %w", path, ErrUnknownTour), logger, span, "resolving step")
 	}
 
-	step, err := s.walker.Step(ctx, t, index)
+	step, err := s.core.Walker.Step(ctx, t, index)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "resolving step")
 	}
 
 	view := &StepView{
-		Index:   index,
-		Kind:    step.Kind,
-		Path:    step.Path,
-		Readme:  step.Readme,
-		Entries: step.Entries,
+		Index:        index,
+		Kind:         step.Kind,
+		Path:         step.Path,
+		Readme:       step.Readme,
+		Body:         step.Body,
+		BodyProblem:  step.BodyDetail,
+		Repo:         step.Repo,
+		CloneCommand: shellJoin(step.CloneCommand),
+		Entries:      step.Entries,
+		Links:        step.Links,
 		Location: anchor.Location{
 			Status:  statusOf(step),
 			Problem: step.Problem,
@@ -307,6 +356,10 @@ func (s *Service) Step(ctx context.Context, path string, index int) (*StepView, 
 
 	if view.Entries == nil {
 		view.Entries = []gitsrc.Entry{}
+	}
+
+	if view.Links == nil {
+		view.Links = []links.Card{}
 	}
 
 	if step.Anchor != nil {
@@ -337,7 +390,7 @@ func (s *Service) checkKnown(ctx context.Context, path string) error {
 		return nil
 	}
 
-	paths, err := s.store.Discover(ctx, s.root)
+	paths, err := s.discover(ctx)
 	if err != nil {
 		return fmt.Errorf("discovering tours: %w", err)
 	}
@@ -362,4 +415,135 @@ func statusOf(step *walk.Step) anchor.Status {
 	default:
 		return anchor.StatusOK
 	}
+}
+
+// vars lists a tour's link variables with their effective values.
+func (s *Service) vars(t *tour.Tour) []VarView {
+	views := make([]VarView, 0, len(t.Vars))
+
+	for i := range t.Vars {
+		v := &t.Vars[i]
+		value, source, _ := s.core.Vars.Lookup(v.Name, t.Vars)
+
+		choices := v.Choices
+		if choices == nil {
+			choices = []string{}
+		}
+
+		views = append(views, VarView{
+			Name:        v.Name,
+			Description: v.Description,
+			Value:       value,
+			Source:      source,
+			Choices:     choices,
+			Locked:      source == links.SourceFlag,
+		})
+	}
+
+	return views
+}
+
+// SetVar records the value picked in the app for one of an open tour's link
+// variables, and returns the variables as they now stand. An empty value
+// clears the pick.
+func (s *Service) SetVar(ctx context.Context, path, name, value string) ([]VarView, error) {
+	_, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	logger := s.logger.WithValues(map[string]any{tourKey: path, "var": name})
+
+	s.mu.Lock()
+	t, ok := s.open[path]
+	s.mu.Unlock()
+
+	if !ok {
+		return nil, observability.PrepareAndLogError(fmt.Errorf("%q is not open: %w", path, ErrUnknownTour), logger, span, "setting variable")
+	}
+
+	var defined *tour.Var
+
+	for i := range t.Vars {
+		if t.Vars[i].Name == name {
+			defined = &t.Vars[i]
+		}
+	}
+
+	switch {
+	case defined == nil:
+		return nil, observability.PrepareAndLogError(fmt.Errorf("variable %q: %w", name, ErrBadVariable), logger, span, "setting variable")
+	case value != "" && len(defined.Choices) > 0 && !slices.Contains(defined.Choices, value):
+		return nil, observability.PrepareAndLogError(fmt.Errorf("%q for %q: %w", value, name, ErrBadVariable), logger, span, "setting variable")
+	}
+
+	s.core.Vars.Pick(name, value)
+
+	return s.vars(t), nil
+}
+
+// Editors lists the editors installed right now.
+func (s *Service) Editors(ctx context.Context) []editor.Editor {
+	if found := s.launcher.Detect(ctx); found != nil {
+		return found
+	}
+
+	return []editor.Editor{}
+}
+
+// OpenInEditor opens a file step of an open tour in an editor, at the line its
+// anchor resolved to. editorID picks one from Editors; empty means the
+// reader's default. The frontend names a step, never a path.
+func (s *Service) OpenInEditor(ctx context.Context, path string, index int, editorID string) (*editor.Result, error) {
+	ctx, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	logger := s.logger.WithValues(map[string]any{tourKey: path, "step": index})
+
+	s.mu.Lock()
+	t, ok := s.open[path]
+	s.mu.Unlock()
+
+	if !ok {
+		return nil, observability.PrepareAndLogError(fmt.Errorf("%q is not open: %w", path, ErrUnknownTour), logger, span, "opening in editor")
+	}
+
+	step, err := s.core.Walker.Step(ctx, t, index)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, logger, span, "resolving step")
+	}
+
+	if step.Kind != walk.KindFile || step.Anchor == nil || step.Anchor.Content == nil {
+		return nil, observability.PrepareAndLogError(ErrNotAFile, logger, span, "opening in editor")
+	}
+
+	abs, _, err := gitsrc.Confine(step.Root, step.Path)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, logger, span, "locating file")
+	}
+
+	location := step.Anchor.Location.Range
+
+	result, err := s.launcher.Open(ctx, &editor.Target{Path: abs, Line: location.StartLine, Col: location.StartCol}, editorID)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, logger, span, "opening in editor")
+	}
+
+	return result, nil
+}
+
+// shellJoin renders an argv as one line that is safe to paste into a shell.
+func shellJoin(argv []string) string {
+	quoted := make([]string, len(argv))
+
+	for i, arg := range argv {
+		if arg != "" && !strings.ContainsFunc(arg, func(r rune) bool {
+			return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%+=:,./-_~", r)
+		}) {
+			quoted[i] = arg
+			continue
+		}
+
+		quoted[i] = "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
+	}
+
+	return strings.Join(quoted, " ")
 }

@@ -4,6 +4,8 @@ package validate
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/primandproper/docent/internal/anchor"
 	"github.com/primandproper/docent/internal/diag"
@@ -69,6 +71,8 @@ func (v *validator) Tour(ctx context.Context, path string) ([]diag.Diagnostic, e
 		if d, found := stepDiagnostic(t, i, step); found {
 			diags = append(diags, d)
 		}
+
+		diags = append(diags, narrativeDiagnostics(t, i, step)...)
 	}
 
 	logger.WithValue("diagnostics", len(diags)).Debug("validated tour")
@@ -93,6 +97,10 @@ func stepDiagnostic(t *tour.Tour, index int, step *walk.Step) (diag.Diagnostic, 
 		d.Code, d.Message = step.Problem, step.Detail
 		d.Pointer = diag.Pointer("steps", index, "directory")
 		d.Hint = "Paths are relative to the folder that contains the tours directory."
+
+		if step.Problem == diag.CodeRepoUnknown || step.Problem == diag.CodeRepoMissing {
+			d.Pointer, d.Hint = anchorPointerAndHint(index, &t.Steps[index], &anchor.Location{Problem: step.Problem})
+		}
 	case walk.KindFile:
 		loc := step.Anchor.Location
 		if loc.Problem == "" {
@@ -112,6 +120,50 @@ func stepDiagnostic(t *tour.Tour, index int, step *walk.Step) (diag.Diagnostic, 
 	return d, true
 }
 
+// narrativeDiagnostics reports problems with a step's body file and links.
+func narrativeDiagnostics(t *tour.Tour, index int, step *walk.Step) []diag.Diagnostic {
+	var out []diag.Diagnostic
+
+	if step.BodyProblem != "" {
+		out = append(out, diag.Diagnostic{
+			File:     t.Path,
+			Pointer:  diag.Pointer("steps", index, "body"),
+			Step:     t.StepLabel(index),
+			Severity: diag.SeverityError,
+			Code:     step.BodyProblem,
+			Message:  step.BodyDetail,
+		})
+	}
+
+	for i := range step.Links {
+		card := &step.Links[i]
+		if card.Problem == "" {
+			continue
+		}
+
+		d := diag.Diagnostic{
+			File:     t.Path,
+			Pointer:  diag.Pointer("steps", index, "links", i, "url"),
+			Step:     t.StepLabel(index),
+			Severity: diag.SeverityError,
+			Code:     diag.CodeLinkScheme,
+			Message:  fmt.Sprintf("link %q: only http and https URLs can be opened", card.Title),
+		}
+
+		if len(card.Missing) > 0 {
+			// A value may be set on another machine, so this can't be an error.
+			d.Severity = diag.SeverityWarning
+			d.Code = diag.CodeLinkVarUnresolved
+			d.Message = fmt.Sprintf("link %q: %s", card.Title, strings.ToLower(card.Problem[:1])+card.Problem[1:])
+			d.Hint = "Declare it under the tour's `vars` with a default, or set it in docent.json `vars`."
+		}
+
+		out = append(out, d)
+	}
+
+	return out
+}
+
 func anchorPointerAndHint(index int, s *tour.Step, loc *anchor.Location) (pointer, hint string) {
 	switch loc.Problem {
 	case diag.CodePatternInvalid:
@@ -128,7 +180,15 @@ func anchorPointerAndHint(index int, s *tour.Step, loc *anchor.Location) (pointe
 		}
 
 		return diag.Pointer("steps", index, "line"), ""
+	case diag.CodeRepoUnknown:
+		return diag.Pointer("steps", index, "repo"), "Add the repo to the tour's `repos`, or fix the name."
+	case diag.CodeRepoMissing:
+		return diag.Pointer("steps", index, "repo"), "Clone it beside the other repos, or map it under `repos` in docent.json."
 	default:
+		if s.Repo != "" {
+			return diag.Pointer("steps", index, "file"), "With `repo` set, paths are relative to that repo's root."
+		}
+
 		return diag.Pointer("steps", index, "file"), "Paths are relative to the folder that contains the tours directory."
 	}
 }

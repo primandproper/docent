@@ -7,12 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/primandproper/docent/internal/anchor"
 	"github.com/primandproper/docent/internal/diag"
 	"github.com/primandproper/docent/internal/gitsrc"
+	"github.com/primandproper/docent/internal/links"
 	"github.com/primandproper/docent/internal/tour"
+	"github.com/primandproper/docent/internal/workspace"
 
 	"github.com/primandproper/primitives-go/v2/observability"
 	"github.com/primandproper/primitives-go/v2/observability/logging"
@@ -48,8 +51,31 @@ type (
 		// Problem and Detail say why a directory couldn't be listed.
 		Problem diag.Code
 		Detail  string
+		// Repo is the logical repo the step lives in, or "" for the tour's own root.
+		Repo string
+		// Body is the step's Markdown body file, when it has one.
+		Body string
+		// BodyProblem and BodyDetail say why a body file couldn't be read.
+		BodyProblem diag.Code
+		BodyDetail  string
 		// Entries are the directory's children, for directory steps.
 		Entries []gitsrc.Entry
+		// CloneCommand would fetch the step's repo, when it isn't checked out.
+		CloneCommand []string
+		// Links are the step's link cards, expanded.
+		Links []links.Card
+	}
+
+	// Dependencies are what a Walker resolves steps with.
+	Dependencies struct {
+		_      struct{}
+		Source gitsrc.FileSource
+		// Repos locates the repos a tour names. Nil means none are checked out.
+		Repos workspace.RepoResolver
+		// Vars fills in link templates. Nil means only tour defaults apply.
+		Vars           *links.Vars
+		Logger         logging.Logger
+		TracerProvider tracing.Provider
 	}
 
 	// Walker resolves steps.
@@ -61,6 +87,8 @@ type (
 		_        struct{}
 		resolver anchor.Resolver
 		source   gitsrc.FileSource
+		repos    workspace.RepoResolver
+		vars     *links.Vars
 		logger   logging.Logger
 		tracer   tracing.Tracer
 	}
@@ -71,13 +99,20 @@ var ErrNoSuchStep = errors.New("no such step")
 
 var _ Walker = (*walker)(nil)
 
-// NewWalker returns a Walker that reads code through source.
-func NewWalker(source gitsrc.FileSource, logger logging.Logger, tracerProvider tracing.Provider) Walker {
+// NewWalker returns a Walker.
+func NewWalker(deps *Dependencies) Walker {
+	vars := deps.Vars
+	if vars == nil {
+		vars = links.NewVars(nil, nil)
+	}
+
 	return &walker{
-		resolver: anchor.NewResolver(source, logger, tracerProvider),
-		source:   source,
-		logger:   logging.NewNamedLogger(logger, o11yName),
-		tracer:   tracing.NewNamedTracer(tracerProvider, o11yName),
+		resolver: anchor.NewResolver(deps.Source, deps.Logger, deps.TracerProvider),
+		source:   deps.Source,
+		repos:    deps.Repos,
+		vars:     vars,
+		logger:   logging.NewNamedLogger(deps.Logger, o11yName),
+		tracer:   tracing.NewNamedTracer(deps.TracerProvider, o11yName),
 	}
 }
 
@@ -105,33 +140,118 @@ func (w *walker) Step(ctx context.Context, t *tour.Tour, index int) (*Step, erro
 	}
 
 	s := &t.Steps[index]
-	out := &Step{Kind: KindOf(s), Root: t.Root}
+	out := &Step{Kind: KindOf(s), Root: t.Root, Repo: s.Repo, Links: make([]links.Card, 0, len(s.Links))}
 	logger := w.logger.WithValues(map[string]any{"tour": t.Path, "step": index})
+
+	for i := range s.Links {
+		out.Links = append(out.Links, w.vars.Expand(&s.Links[i], t.Vars))
+	}
+
+	w.body(ctx, t, s, out)
 
 	switch out.Kind {
 	case KindFile:
 		out.Path = s.File
+	case KindDirectory:
+		out.Path = s.Directory
+	case KindURI, KindContent:
+		return out, nil
+	}
 
-		res, err := w.resolver.Resolve(ctx, &anchor.Request{
-			Root: t.Root,
+	problem, detail, err := w.locateRepo(ctx, t, s, out)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, logger, span, "locating step repo")
+	}
+
+	switch {
+	case problem != "" && out.Kind == KindFile:
+		out.Anchor = &anchor.Resolution{Location: anchor.Location{Status: anchor.StatusMissing, Problem: problem, Detail: detail}}
+	case problem != "":
+		out.Problem, out.Detail = problem, detail
+	case out.Kind == KindFile:
+		res, resolveErr := w.resolver.Resolve(ctx, &anchor.Request{
+			Root: out.Root,
 			File: s.File,
 			Spec: anchor.Spec{Line: s.Line, Pattern: s.Pattern, Selection: s.Selection},
 		})
-		if err != nil {
-			return nil, observability.PrepareAndLogError(err, logger, span, "resolving step anchor")
+		if resolveErr != nil {
+			return nil, observability.PrepareAndLogError(resolveErr, logger, span, "resolving step anchor")
 		}
 
 		out.Anchor = res
-	case KindDirectory:
-		out.Path = s.Directory
-
-		if err := w.directory(ctx, out); err != nil {
-			return nil, observability.PrepareAndLogError(err, logger, span, "listing step directory")
+	default:
+		if dirErr := w.directory(ctx, out); dirErr != nil {
+			return nil, observability.PrepareAndLogError(dirErr, logger, span, "listing step directory")
 		}
-	case KindURI, KindContent:
 	}
 
 	return out, nil
+}
+
+// locateRepo points out.Root at the step's repo. A step without `repo` stays
+// rooted at the tour. A repo that is unknown or not checked out is a problem
+// to report, not an error.
+func (w *walker) locateRepo(ctx context.Context, t *tour.Tour, s *tour.Step, out *Step) (problem diag.Code, detail string, err error) {
+	if s.Repo == "" {
+		return "", "", nil
+	}
+
+	var repo *tour.Repo
+
+	for i := range t.Repos {
+		if t.Repos[i].Name == s.Repo {
+			repo = &t.Repos[i]
+			break
+		}
+	}
+
+	if repo == nil {
+		return diag.CodeRepoUnknown, fmt.Sprintf("repo %q is not defined in the tour's `repos`", s.Repo), nil
+	}
+
+	if w.repos == nil {
+		return diag.CodeRepoMissing, fmt.Sprintf("repo %q is not checked out on this machine", s.Repo), nil
+	}
+
+	checkout, err := w.repos.Resolve(ctx, repo)
+	if err != nil {
+		return "", "", fmt.Errorf("resolving repo %q: %w", s.Repo, err)
+	}
+
+	if !checkout.Found {
+		out.CloneCommand = checkout.CloneCommand
+		return diag.CodeRepoMissing, fmt.Sprintf("repo %q is not checked out on this machine", s.Repo), nil
+	}
+
+	out.Root = checkout.Root
+
+	return "", "", nil
+}
+
+// body loads the step's Markdown body, which lives beside the tour file.
+func (w *walker) body(ctx context.Context, t *tour.Tour, s *tour.Step, out *Step) {
+	if s.Body == "" {
+		return
+	}
+
+	content, err := w.source.ReadFile(ctx, filepath.Dir(t.Path), "", s.Body)
+	if err != nil {
+		out.BodyProblem = diag.CodeBodyMissing
+
+		switch {
+		case errors.Is(err, gitsrc.ErrEscapesRoot):
+			out.BodyProblem = diag.CodePathEscapesRoot
+			out.BodyDetail = fmt.Sprintf("body %q resolves outside the tour's folder and was not read", s.Body)
+		case errors.Is(err, gitsrc.ErrNotFound):
+			out.BodyDetail = fmt.Sprintf("body %q does not exist; paths are relative to the tour file", s.Body)
+		default:
+			out.BodyDetail = fmt.Sprintf("body %q could not be read: %v", s.Body, err)
+		}
+
+		return
+	}
+
+	out.Body = string(content)
 }
 
 func (w *walker) directory(ctx context.Context, out *Step) error {

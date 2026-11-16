@@ -8,40 +8,82 @@ interface Fixture {
   tours: TourSummary[];
   views: Record<string, TourView>;
   steps: Record<string, StepView[]>;
+  /** Steps and views again for each choice of each variable, keyed "path|name=value". */
+  picked: Record<string, { view: TourView; steps: StepView[] }>;
 }
 
 declare global {
   interface Window {
-    /** URLs the app asked to open in the system browser, for tests to assert on. */
+    /** What the app asked the outside world to do, for tests to assert on. */
     openedURLs: string[];
+    openedInEditor: { path: string; index: number; editorID: string }[];
+    copied: string[];
+    /** The recorded answers. Tests edit this, then call docentChanged, to stand in for a file changing. */
+    docentFixture?: Fixture;
+    docentChanged: () => void;
   }
 }
 
 window.openedURLs = [];
+window.openedInEditor = [];
+window.copied = [];
 
-let loaded: Promise<Fixture> | null = null;
+const listeners = new Set<() => void>();
+window.docentChanged = () => listeners.forEach((listener) => listener());
 
-function fixture(): Promise<Fixture> {
-  loaded ??= fetch('/fixture.json').then((response) => response.json() as Promise<Fixture>);
-  return loaded;
+/** The variable choice in force per tour, as "name=value". */
+const picks = new Map<string, string>();
+
+async function fixture(): Promise<Fixture> {
+  window.docentFixture ??= (await (await fetch('/fixture.json')).json()) as Fixture;
+  return window.docentFixture;
+}
+
+async function current(path: string): Promise<{ view: TourView; steps: StepView[] } | undefined> {
+  const f = await fixture();
+  const pick = picks.get(path);
+  if (pick && f.picked[`${path}|${pick}`]) {
+    return f.picked[`${path}|${pick}`];
+  }
+  return f.views[path] ? { view: f.views[path], steps: f.steps[path] ?? [] } : undefined;
 }
 
 export const backend: Api = {
   workspace: async () => (await fixture()).workspace,
   listTours: async () => (await fixture()).tours,
   openTour: async (path) => {
-    const view = (await fixture()).views[path];
-    if (!view) {
+    const found = await current(path);
+    if (!found) {
       throw new Error(`${path}: not a tour in this workspace`);
     }
-    return view;
+    return found.view;
   },
   step: async (path, index) => {
-    const step = (await fixture()).steps[path]?.[index];
+    const step = (await current(path))?.steps[index];
     if (!step) {
       throw new Error(`step ${index} of ${path}: no such step`);
     }
     return step;
+  },
+  setVar: async (path, name, value) => {
+    if (value === '') {
+      picks.delete(path);
+    } else {
+      picks.set(path, `${name}=${value}`);
+    }
+    return (await current(path))?.view.vars ?? [];
+  },
+  editors: async () => [{ id: 'zed', name: 'Zed' }],
+  openInEditor: async (path, index, editorID) => {
+    window.openedInEditor.push({ path, index, editorID });
+    return { via: 'editor', editor: { id: 'zed', name: 'Zed' }, note: '' };
+  },
+  copy: async (text) => {
+    window.copied.push(text);
+  },
+  onChanged: (callback) => {
+    listeners.add(callback);
+    return () => listeners.delete(callback);
   },
   openExternal: async (url) => {
     if (!isExternalURL(url)) {

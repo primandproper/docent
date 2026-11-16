@@ -12,6 +12,9 @@ import * as diag$0 from "../diag/models.js";
 import * as gitsrc$0 from "../gitsrc/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as links$0 from "../links/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as tour$0 from "../tour/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -51,7 +54,30 @@ export interface StepView {
      * Readme is the directory's README, for directory steps.
      */
     "readme": string;
+
+    /**
+     * Body is the step's Markdown body file. When empty, the step's
+     * description is the narrative.
+     */
+    "body": string;
+
+    /**
+     * BodyProblem says why a body file couldn't be shown.
+     */
+    "bodyProblem": string;
+
+    /**
+     * Repo is the logical repo the step lives in, when the tour names one.
+     */
+    "repo": string;
+
+    /**
+     * CloneCommand fetches the step's repo when it isn't checked out,
+     * quoted for pasting into a shell.
+     */
+    "cloneCommand": string;
     "entries": gitsrc$0.Entry[] | null;
+    "links": links$0.Card[] | null;
     "location": anchor$0.Location;
     "index": number;
 }
@@ -72,6 +98,11 @@ export interface TourSummary {
     "title": string;
     "description": string;
     "tags": string[] | null;
+
+    /**
+     * Repos are the logical names of the repos the tour touches.
+     */
+    "repos": string[] | null;
     "steps": number;
 
     /**
@@ -103,6 +134,28 @@ export interface TourView {
      * Steps runs parallel to Tour.Steps.
      */
     "steps": StepSummary[] | null;
+    "vars": VarView[] | null;
+}
+
+/**
+ * VarView is a link variable as the picker shows it.
+ */
+export interface VarView {
+    "name": string;
+    "description": string;
+
+    /**
+     * Value is the effective value, and Source where it came from.
+     */
+    "value": string;
+    "source": string;
+    "choices": string[] | null;
+
+    /**
+     * Locked is set when the value was given on the command line, which
+     * outranks the picker.
+     */
+    "locked": boolean;
 }
 
 /**

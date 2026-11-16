@@ -49,6 +49,8 @@
       void session.next();
     } else if (event.key === 'k' || event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
       void session.previous();
+    } else if (event.key === 'o') {
+      void session.openInEditor();
     } else if (event.key === 'g') {
       goingTo = true;
     } else if (event.key === 'Escape') {
@@ -67,6 +69,10 @@
     <span>{session.error}</span>
     <button onclick={() => (session.error = '')} aria-label="Dismiss">×</button>
   </div>
+{/if}
+
+{#if session.notice && !session.error}
+  <div class="toast" role="status">{session.notice}</div>
 {/if}
 
 {#if session.loading}
@@ -101,6 +107,20 @@
     border: 1px solid var(--red);
     background: var(--raised);
     color: var(--red);
+    box-shadow: var(--shadow);
+    font-size: 13px;
+  }
+
+  .toast {
+    position: fixed;
+    z-index: 10;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--raised);
     box-shadow: var(--shadow);
     font-size: 13px;
   }

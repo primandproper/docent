@@ -22,7 +22,7 @@ func newValidator(tourJSON string) Validator {
 	}
 	store := &tour.MemoryStore{Root: "/r", Files: map[string][]byte{tourPath: []byte(tourJSON)}}
 
-	return NewValidator(store, walk.NewWalker(source, nil, nil), nil, nil)
+	return NewValidator(store, walk.NewWalker(&walk.Dependencies{Source: source}), nil, nil)
 }
 
 func TestValidator_Tour(T *testing.T) {

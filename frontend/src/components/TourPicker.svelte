@@ -111,7 +111,9 @@
             {/if}
             <span class="meta">
               {tour.steps}
-              {tour.steps === 1 ? 'step' : 'steps'} · {tour.displayPath}
+              {tour.steps === 1 ? 'step' : 'steps'}
+              {#if (tour.repos ?? []).length > 0}· {(tour.repos ?? []).join(', ')}{/if}
+              · {tour.displayPath}
               {#each tour.tags ?? [] as tag (tag)}
                 <span class="tag">{tag}</span>
               {/each}

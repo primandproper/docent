@@ -74,6 +74,31 @@ export enum Code {
      * CodeAnchorMoved: `pattern` matched, but not on `line`.
      */
     CodeAnchorMoved = "anchor-moved",
+
+    /**
+     * CodeRepoUnknown: a step names a repo the tour's `repos` doesn't define.
+     */
+    CodeRepoUnknown = "repo-unknown",
+
+    /**
+     * CodeRepoMissing: a repo the tour uses isn't checked out on this machine.
+     */
+    CodeRepoMissing = "repo-missing",
+
+    /**
+     * CodeBodyMissing: a step's `body` file doesn't exist or can't be read.
+     */
+    CodeBodyMissing = "body-missing",
+
+    /**
+     * CodeLinkVarUnresolved: a link uses a {{variable}} nothing gives a value for.
+     */
+    CodeLinkVarUnresolved = "link-var-unresolved",
+
+    /**
+     * CodeLinkScheme: a link's URL isn't http or https.
+     */
+    CodeLinkScheme = "link-scheme",
 };
 
 /**

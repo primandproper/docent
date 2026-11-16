@@ -47,7 +47,7 @@ func TestWalker_Step(T *testing.T) {
 
 		tr, source := fixture()
 
-		step, err := NewWalker(source, nil, nil).Step(t.Context(), tr, 0)
+		step, err := NewWalker(&Dependencies{Source: source}).Step(t.Context(), tr, 0)
 		must.NoError(t, err)
 		test.Eq(t, KindFile, step.Kind)
 		test.Eq(t, "pkg/a.go", step.Path)
@@ -60,7 +60,7 @@ func TestWalker_Step(T *testing.T) {
 
 		tr, source := fixture()
 
-		step, err := NewWalker(source, nil, nil).Step(t.Context(), tr, 1)
+		step, err := NewWalker(&Dependencies{Source: source}).Step(t.Context(), tr, 1)
 		must.NoError(t, err)
 		test.Eq(t, KindDirectory, step.Kind)
 		test.Eq(t, []gitsrc.Entry{{Name: "README.md"}, {Name: "guide.md"}}, step.Entries)
@@ -73,7 +73,7 @@ func TestWalker_Step(T *testing.T) {
 
 		tr, source := fixture()
 
-		step, err := NewWalker(source, nil, nil).Step(t.Context(), tr, 7)
+		step, err := NewWalker(&Dependencies{Source: source}).Step(t.Context(), tr, 7)
 		must.NoError(t, err)
 		test.Len(t, 1, step.Entries)
 		test.Eq(t, "", step.Readme)
@@ -83,7 +83,7 @@ func TestWalker_Step(T *testing.T) {
 		t.Parallel()
 
 		tr, source := fixture()
-		w := NewWalker(source, nil, nil)
+		w := NewWalker(&Dependencies{Source: source})
 
 		step, err := w.Step(t.Context(), tr, 2)
 		must.NoError(t, err)
@@ -99,7 +99,7 @@ func TestWalker_Step(T *testing.T) {
 		t.Parallel()
 
 		tr, source := fixture()
-		w := NewWalker(source, nil, nil)
+		w := NewWalker(&Dependencies{Source: source})
 
 		step, err := w.Step(t.Context(), tr, 4)
 		must.NoError(t, err)
@@ -122,7 +122,7 @@ func TestWalker_Step(T *testing.T) {
 		t.Parallel()
 
 		tr, source := fixture()
-		w := NewWalker(source, nil, nil)
+		w := NewWalker(&Dependencies{Source: source})
 
 		_, err := w.Step(t.Context(), tr, len(tr.Steps))
 		test.ErrorIs(t, err, ErrNoSuchStep)

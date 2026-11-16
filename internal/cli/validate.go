@@ -9,11 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/primandproper/docent/internal/core"
 	"github.com/primandproper/docent/internal/diag"
-	"github.com/primandproper/docent/internal/gitsrc"
 	"github.com/primandproper/docent/internal/tour"
-	"github.com/primandproper/docent/internal/validate"
-	"github.com/primandproper/docent/internal/walk"
 
 	"github.com/spf13/cobra"
 )
@@ -54,24 +52,24 @@ func (a *application) validate(ctx context.Context, args []string, asJSON, stric
 		args = []string{"."}
 	}
 
-	store := tour.NewStore(a.log(), a.tracerProvider)
-	walker := walk.NewWalker(gitsrc.NewWorkingTree(a.log(), a.tracerProvider), a.log(), a.tracerProvider)
-	validator := validate.NewValidator(store, walker, a.log(), a.tracerProvider)
+	report := validateReport{Diagnostics: []diag.Diagnostic{}}
 
-	paths, err := tourPaths(ctx, store, args)
-	if err != nil {
-		return err
-	}
-
-	report := validateReport{Tours: len(paths), Diagnostics: []diag.Diagnostic{}}
-
-	for _, path := range paths {
-		diags, tourErr := validator.Tour(ctx, path)
-		if tourErr != nil {
-			return fmt.Errorf("validating %q: %w", path, tourErr)
+	for _, arg := range args {
+		services, paths, err := a.tourPaths(ctx, arg)
+		if err != nil {
+			return err
 		}
 
-		report.Diagnostics = append(report.Diagnostics, diags...)
+		report.Tours += len(paths)
+
+		for _, path := range paths {
+			diags, tourErr := services.Validator.Tour(ctx, path)
+			if tourErr != nil {
+				return fmt.Errorf("validating %q: %w", path, tourErr)
+			}
+
+			report.Diagnostics = append(report.Diagnostics, diags...)
+		}
 	}
 
 	for i := range report.Diagnostics {
@@ -83,14 +81,10 @@ func (a *application) validate(ctx context.Context, args []string, asJSON, stric
 	}
 
 	if asJSON {
-		enc := json.NewEncoder(a.streams.Stdout)
-		enc.SetIndent("", "  ")
-		enc.SetEscapeHTML(false)
-
-		if err = enc.Encode(report); err != nil {
-			return fmt.Errorf("writing report: %w", err)
+		if err := writeJSON(a.streams.Stdout, report); err != nil {
+			return err
 		}
-	} else if err = printReport(a.streams.Stdout, &report); err != nil {
+	} else if err := printReport(a.streams.Stdout, &report); err != nil {
 		return fmt.Errorf("writing report: %w", err)
 	}
 
@@ -106,41 +100,57 @@ func (a *application) validate(ctx context.Context, args []string, asJSON, stric
 	}
 }
 
-// tourPaths expands arguments into tour files: a file is taken as is, a folder
-// is searched. A folder with no tours is an error, so a mistyped path can't
-// pass for a clean run.
-func tourPaths(ctx context.Context, store tour.Store, args []string) ([]string, error) {
-	var paths []string
-
-	for _, arg := range args {
-		abs, err := filepath.Abs(arg)
-		if err != nil {
-			return nil, fmt.Errorf("resolving %q: %w", arg, err)
-		}
-
-		info, err := os.Stat(abs)
-		if err != nil {
-			return nil, fmt.Errorf("%q does not exist", arg)
-		}
-
-		if !info.IsDir() {
-			paths = append(paths, abs)
-			continue
-		}
-
-		found, err := store.Discover(ctx, abs)
-		if err != nil {
-			return nil, fmt.Errorf("searching %q: %w", arg, err)
-		}
-
-		if len(found) == 0 {
-			return nil, fmt.Errorf("no tours found under %q (looked in .tours, .vscode/tours and .github/tours)", arg)
-		}
-
-		paths = append(paths, found...)
+// tourPaths expands one argument into tour files and the services to check
+// them with. A file is taken as is, and its configuration is its tour root's;
+// a folder is searched. A folder with no tours is an error, so a mistyped
+// path can't pass for a clean run.
+func (a *application) tourPaths(ctx context.Context, arg string) (*core.Core, []string, error) {
+	abs, err := filepath.Abs(arg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolving %q: %w", arg, err)
 	}
 
-	return paths, nil
+	info, err := os.Stat(abs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%q does not exist", arg)
+	}
+
+	if !info.IsDir() {
+		services, coreErr := a.coreFor(tour.RootFor(abs), nil)
+		if coreErr != nil {
+			return nil, nil, coreErr
+		}
+
+		return services, []string{abs}, nil
+	}
+
+	services, err := a.coreFor(abs, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	found, err := services.Store.Discover(ctx, abs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("searching %q: %w", arg, err)
+	}
+
+	if len(found) == 0 {
+		return nil, nil, fmt.Errorf("no tours found under %q (looked in .tours, .vscode/tours and .github/tours)", arg)
+	}
+
+	return services, found, nil
+}
+
+func writeJSON(w io.Writer, value any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+
+	if err := enc.Encode(value); err != nil {
+		return fmt.Errorf("writing output: %w", err)
+	}
+
+	return nil
 }
 
 func printReport(w io.Writer, report *validateReport) error {

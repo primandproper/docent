@@ -12,7 +12,18 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as editor$0 from "../editor/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+/**
+ * Editors lists the editors installed right now.
+ */
+export function Editors(): $CancellablePromise<editor$0.Editor[] | null> {
+    return $Call.ByID(136043198);
+}
 
 /**
  * ListTours discovers the workspace's tours and summarizes each for the picker.
@@ -22,10 +33,28 @@ export function ListTours(): $CancellablePromise<$models.TourSummary[] | null> {
 }
 
 /**
+ * OpenInEditor opens a file step of an open tour in an editor, at the line its
+ * anchor resolved to. editorID picks one from Editors; empty means the
+ * reader's default. The frontend names a step, never a path.
+ */
+export function OpenInEditor(path: string, index: number, editorID: string): $CancellablePromise<editor$0.Result | null> {
+    return $Call.ByID(806951226, path, index, editorID);
+}
+
+/**
  * OpenTour loads a tour by the path ListTours gave for it.
  */
 export function OpenTour(path: string): $CancellablePromise<$models.TourView | null> {
     return $Call.ByID(1456785418, path);
+}
+
+/**
+ * SetVar records the value picked in the app for one of an open tour's link
+ * variables, and returns the variables as they now stand. An empty value
+ * clears the pick.
+ */
+export function SetVar(path: string, name: string, value: string): $CancellablePromise<$models.VarView[] | null> {
+    return $Call.ByID(804890209, path, name, value);
 }
 
 /**

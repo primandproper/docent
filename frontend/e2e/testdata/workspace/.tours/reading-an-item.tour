@@ -3,15 +3,46 @@
   "title": "Reading an item",
   "description": "The read path, which is where the cache earns its keep.",
   "tags": ["cache", "read-path"],
+  "repos": {
+    "api": { "remote": "git@github.com:acme/api.git", "ref": "main" },
+    "worker": { "remote": "git@github.com:acme/worker.git", "ref": "main" },
+    "billing": { "remote": "git@github.com:acme/billing.git" }
+  },
+  "vars": {
+    "env": { "choices": ["staging", "prod"], "default": "staging", "description": "Which environment the links point at" }
+  },
   "generatedBy": { "agent": "claude-code", "at": "2026-11-16T10:00:00Z" },
   "steps": [
     {
       "id": "get-item",
       "title": "The read handler",
-      "file": "api/internal/http/items.go",
+      "repo": "api",
+      "file": "internal/http/items.go",
       "pattern": "^func \\(h \\*Handler\\) GetItem",
       "line": 15,
-      "description": "Reads go straight to the store on a cache miss."
+      "description": "Reads go straight to the store on a cache miss.",
+      "body": "reading-an-item/01-get-item.md",
+      "links": [
+        { "kind": "grafana", "title": "Read latency p99", "url": "{{grafana}}/d/abc123/items?var-env={{env}}", "description": "Watch this while the cache warms." },
+        { "kind": "logs", "title": "Cache miss logs", "url": "{{logs}}/search?q=cache_miss" }
+      ]
+    },
+    {
+      "id": "retries",
+      "title": "Retries in the worker",
+      "repo": "worker",
+      "file": "src/purge.ts",
+      "pattern": "const MAX_ATTEMPTS",
+      "line": 4,
+      "description": "The worker repo is found through docent.json."
+    },
+    {
+      "id": "charges",
+      "title": "Where reads are metered",
+      "repo": "billing",
+      "file": "meter.go",
+      "line": 1,
+      "description": "This repo isn't checked out here."
     },
     {
       "id": "wrap-up",

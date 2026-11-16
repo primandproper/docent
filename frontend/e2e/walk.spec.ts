@@ -25,7 +25,8 @@ test.describe('tour picker', () => {
 
     const draft = page.getByRole('button', { name: /Reading an item/ });
     await expect(draft).toContainText('Unreviewed draft');
-    await expect(draft).toContainText('All anchors resolve');
+    await expect(draft).toContainText('1 problem');
+    await expect(draft).toContainText('api, worker, billing');
 
     await expect(page.getByRole('button', { name: /broken\.tour/ })).toBeDisabled();
   });
@@ -168,5 +169,112 @@ test.describe('walking a tour', () => {
 
     await page.keyboard.press('Escape');
     await expect(page.locator('.picker')).toBeVisible();
+  });
+});
+
+test.describe('a tour across repos', () => {
+  async function openDraft(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Reading an item/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Reading an item' })).toBeVisible();
+  }
+
+  test('steps read from their own repos, however each was found', async ({ page }) => {
+    await openDraft(page);
+
+    await expect(page.locator('.crumbs .root')).toHaveText('api');
+    await expect(page.locator('.row.band')).toContainText('func (h *Handler) GetItem');
+    await expect(page.locator('.step').nth(0).locator('.repo')).toHaveText('api');
+
+    await page.keyboard.press('j');
+    await expect(page.locator('.crumbs .root')).toHaveText('worker');
+    await expect(page.locator('.row.band')).toContainText('const MAX_ATTEMPTS = 5;');
+  });
+
+  test('a repo that is not checked out offers its clone command', async ({ page }) => {
+    await openDraft(page);
+
+    await page.locator('.step').nth(2).click();
+    await expect(page.locator('.crumbs .badge')).toHaveText('Missing');
+    await expect(page.locator('.narrative .notice')).toContainText('repo "billing" is not checked out on this machine');
+    await expect(page.locator('.clone code')).toContainText('git clone git@github.com:acme/billing.git');
+
+    await page.locator('.clone').getByRole('button', { name: 'Copy' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Copied the clone command.' })).toBeVisible();
+    expect((await page.evaluate(() => window.copied))[0]).toMatch(
+      /^git clone git@github\.com:acme\/billing\.git .*\/billing$/,
+    );
+  });
+
+  test('the body file replaces the description, and links become cards', async ({ page }) => {
+    await openDraft(page);
+
+    const narrative = page.locator('.narrative');
+    await expect(narrative.locator('table')).toContainText('Cache miss');
+    await expect(narrative).not.toContainText('Reads go straight to the store on a cache miss.');
+
+    const cards = narrative.locator('.links .link-card');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toContainText('grafana');
+    await expect(cards.nth(0)).toContainText('Read latency p99');
+    await expect(cards.nth(0)).toContainText('grafana.example.com');
+    await expect(cards.nth(1)).toBeDisabled();
+    await expect(cards.nth(1)).toContainText('No value for {{logs}}');
+  });
+
+  test('picking a variable changes where the links go', async ({ page }) => {
+    await openDraft(page);
+
+    const card = page.locator('.links .link-card').first();
+    await card.click();
+    await page.getByLabel('env').selectOption('prod');
+    await expect(card).toHaveAttribute('title', /var-env=prod/);
+    await card.click();
+
+    expect(await page.evaluate(() => window.openedURLs)).toEqual([
+      'https://grafana.example.com/d/abc123/items?var-env=staging',
+      'https://grafana.example.com/d/abc123/items?var-env=prod',
+    ]);
+  });
+
+  test('o opens the step in the editor, and only for steps with a file', async ({ page }) => {
+    await openDraft(page);
+    await expect(page.locator('.row.band')).toBeVisible();
+
+    await page.keyboard.press('o');
+    await expect(page.getByRole('status').filter({ hasText: 'Opened in Zed.' })).toBeVisible();
+
+    await page.locator('.step').nth(3).click();
+    await expect(page.locator('.narrative')).toContainText('Short tour, short path.');
+    await page.keyboard.press('o');
+
+    const opened = await page.evaluate(() => window.openedInEditor);
+    expect(opened).toHaveLength(1);
+    expect(opened[0]).toMatchObject({ index: 0, editorID: '' });
+  });
+
+  test('a change on disk reloads the tour and keeps the reader on their step', async ({ page }) => {
+    await openDraft(page);
+
+    await page.keyboard.press('j');
+    await expect(currentStep(page)).toContainText('Retries in the worker');
+
+    // Stand in for an agent inserting a step above this one and retitling it.
+    await page.evaluate(() => {
+      const fixture = window.docentFixture!;
+      const path = Object.keys(fixture.views).find((p) => p.endsWith('reading-an-item.tour'))!;
+      const view = fixture.views[path];
+      const steps = view.tour!.steps!;
+      steps.unshift({ ...steps[3], id: 'preface', title: 'A new first step' });
+      view.steps!.unshift(view.steps![3]);
+      fixture.steps[path].unshift({ ...fixture.steps[path][3] });
+      fixture.steps[path].forEach((step, index) => (step.index = index));
+      steps[2].title = 'Retries, retitled';
+      window.docentChanged();
+    });
+
+    await expect(page.locator('.step')).toHaveCount(5);
+    await expect(currentStep(page)).toContainText('Retries, retitled');
+    await expect(page.locator('.row.band')).toContainText('const MAX_ATTEMPTS = 5;');
   });
 });

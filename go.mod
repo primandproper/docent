@@ -3,10 +3,12 @@ module github.com/primandproper/docent
 go 1.27
 
 require (
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/primandproper/primitives-go/v2 v2.18.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/shoenig/test v1.13.2
 	github.com/spf13/cobra v1.10.2
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	github.com/wailsapp/wails/v3 v3.1.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	golang.org/x/text v0.43.0
@@ -78,7 +80,6 @@ require (
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/getsentry/sentry-go v0.43.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect

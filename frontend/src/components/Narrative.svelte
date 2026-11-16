@@ -9,7 +9,8 @@
 
   const tour = $derived(session.view?.tour);
   const step = $derived(tour?.steps?.[session.index]);
-  const location = $derived(session.step?.index === session.index ? session.step.location : null);
+  const resolved = $derived(session.step?.index === session.index ? session.step : null);
+  const location = $derived(resolved?.location ?? null);
   const isLast = $derived(session.index === session.stepCount - 1);
   const nextTour = $derived(
     tour?.nextTour ? session.tours.find((t) => t.title === tour.nextTour && !t.unreadable) : undefined,
@@ -36,7 +37,39 @@
           <p class="notice {toneOf(location.status)}" role="status">{location.detail}</p>
         {/if}
 
-        <Markdown source={step.description} />
+        {#if resolved?.cloneCommand}
+          <div class="clone">
+            <code class="selectable">{resolved.cloneCommand}</code>
+            <button onclick={() => session.copy(resolved.cloneCommand, 'the clone command')}>Copy</button>
+          </div>
+        {/if}
+
+        {#if resolved?.bodyProblem}
+          <p class="notice red" role="status">{resolved.bodyProblem}</p>
+        {/if}
+
+        <!-- The description stands in until the body arrives, and when there is none. -->
+        <Markdown source={resolved?.body || step.description} />
+
+        {#if resolved?.links?.length}
+          <ul class="links">
+            {#each resolved.links ?? [] as link, i (i)}
+              <li>
+                <button
+                  class="link-card"
+                  disabled={!!link.problem}
+                  onclick={() => api.openExternal(link.url)}
+                  title={link.problem || link.url}
+                >
+                  <span class="kind">{link.kind}</span>
+                  <span class="host">{link.title}</span>
+                  {#if link.description}<span class="about">{link.description}</span>{/if}
+                  <span class="url">{link.problem || link.host}</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
 
         {#if step.uri && !step.file && !step.directory}
           {#if isExternalURL(step.uri)}
@@ -150,8 +183,69 @@
     background: var(--raised);
   }
 
-  .link-card:hover {
+  .link-card:hover:not(:disabled) {
     border-color: var(--accent);
+  }
+
+  .link-card:disabled {
+    opacity: 0.6;
+  }
+
+  .link-card:disabled .url {
+    color: var(--amber);
+  }
+
+  .links {
+    list-style: none;
+    margin: 18px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .links .link-card {
+    margin-top: 0;
+  }
+
+  .kind {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .about {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .clone {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 8px 8px 8px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+  }
+
+  .clone code {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .clone button {
+    flex: none;
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--raised);
+    font-size: 12px;
   }
 
   .host {

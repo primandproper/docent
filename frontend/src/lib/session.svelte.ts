@@ -1,5 +1,5 @@
 import { api, errorMessage } from './api';
-import type { StepView, TourSummary, TourView, Workspace } from './api';
+import type { StepView, TourSummary, TourView, VarView, Workspace } from './api';
 import { NavHistory } from './history';
 import type { Place } from './history';
 import { positionAfterReload } from './steps';
@@ -15,11 +15,15 @@ class Session {
   loading = $state(true);
   /** A failure worth interrupting the reader for. */
   error = $state('');
+  /** Something that happened and is worth a passing mention. */
+  notice = $state('');
 
   view = $state<TourView | null>(null);
   index = $state(0);
   step = $state<StepView | null>(null);
+  vars = $state<VarView[]>([]);
 
+  private noticeTimer: ReturnType<typeof setTimeout> | undefined;
   private history = new NavHistory();
   private cache = new Map<number, StepView>();
   /** Counts navigations, so a slow answer for a step we already left is dropped. */
@@ -38,6 +42,8 @@ class Session {
       this.workspace = await api.workspace();
       await this.refreshTours();
       this.history.visit({ path: '', index: 0 });
+      // Live reload: whoever is editing a tour sees it here as they save.
+      api.onChanged(() => void this.reload());
     } catch (err) {
       this.error = errorMessage(err);
     } finally {
@@ -55,6 +61,7 @@ class Session {
       const view = await api.openTour(path);
       this.cache.clear();
       this.view = view;
+      this.vars = view.vars ?? [];
       this.error = '';
       await this.go(index, record);
     } catch (err) {
@@ -149,11 +156,57 @@ class Session {
       const view = await api.openTour(this.path);
       this.cache.clear();
       this.view = view;
+      this.vars = view.vars ?? [];
       this.error = '';
       await this.go(positionAfterReload(previous, view.tour?.steps ?? []), false);
     } catch (err) {
       this.error = errorMessage(err);
     }
+  }
+
+  /** Picks a value for a link variable and re-resolves the links that use it. */
+  async setVar(name: string, value: string): Promise<void> {
+    try {
+      this.vars = await api.setVar(this.path, name, value);
+      this.cache.clear();
+      await this.go(this.index, false);
+    } catch (err) {
+      this.error = errorMessage(err);
+    }
+  }
+
+  /** Opens the current step's file in the reader's editor. */
+  async openInEditor(editorID = ''): Promise<void> {
+    if (this.view?.steps?.[this.index]?.kind !== 'file') {
+      return;
+    }
+    try {
+      const result = await api.openInEditor(this.path, this.index, editorID);
+      const where =
+        result.via === 'editor'
+          ? `Opened in ${result.editor.name}`
+          : result.via === 'default-app'
+            ? 'Opened in the default app'
+            : 'Revealed in Finder';
+      this.say(result.note ? `${result.note}. ${where}.` : `${where}.`);
+    } catch (err) {
+      this.error = errorMessage(err);
+    }
+  }
+
+  async copy(text: string, what: string): Promise<void> {
+    try {
+      await api.copy(text);
+      this.say(`Copied ${what}.`);
+    } catch (err) {
+      this.error = errorMessage(err);
+    }
+  }
+
+  private say(message: string): void {
+    this.notice = message;
+    clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => (this.notice = ''), 3500);
   }
 
   back(): Promise<void> {

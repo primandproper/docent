@@ -12,18 +12,24 @@ import (
 	"path/filepath"
 
 	"github.com/primandproper/docent/internal/app"
-	"github.com/primandproper/docent/internal/gitsrc"
-	"github.com/primandproper/docent/internal/tour"
-	"github.com/primandproper/docent/internal/validate"
-	"github.com/primandproper/docent/internal/walk"
+	"github.com/primandproper/docent/internal/core"
 )
 
 type fixture struct {
-	_         struct{}                   `json:"-"`
-	Views     map[string]*app.TourView   `json:"views"`
-	Steps     map[string][]*app.StepView `json:"steps"`
-	Workspace app.Workspace              `json:"workspace"`
-	Tours     []app.TourSummary          `json:"tours"`
+	_     struct{}                   `json:"-"`
+	Views map[string]*app.TourView   `json:"views"`
+	Steps map[string][]*app.StepView `json:"steps"`
+	// Picked holds each tour again for every choice of every variable that
+	// has choices, keyed "path|name=value".
+	Picked    map[string]picked `json:"picked"`
+	Workspace app.Workspace     `json:"workspace"`
+	Tours     []app.TourSummary `json:"tours"`
+}
+
+type picked struct {
+	_     struct{}        `json:"-"`
+	View  *app.TourView   `json:"view"`
+	Steps []*app.StepView `json:"steps"`
 }
 
 func main() {
@@ -48,14 +54,19 @@ func run(ctx context.Context, workspace, output string) error {
 		return fmt.Errorf("resolving workspace: %w", err)
 	}
 
-	store := tour.NewStore(nil, nil)
-	walker := walk.NewWalker(gitsrc.NewWorkingTree(nil, nil), nil, nil)
-	service := app.NewService(root, store, walker, validate.NewValidator(store, walker, nil, nil), nil, nil)
+	// The user's own config must not leak into a recorded fixture.
+	services, err := core.New(&core.Options{Root: root, UserConfigPath: filepath.Join(root, "no-user-config.json")})
+	if err != nil {
+		return fmt.Errorf("setting up: %w", err)
+	}
+
+	service := app.NewService(root, services, nil, nil, nil)
 
 	out := fixture{
 		Workspace: service.Workspace(),
 		Views:     map[string]*app.TourView{},
 		Steps:     map[string][]*app.StepView{},
+		Picked:    map[string]picked{},
 	}
 
 	if out.Tours, err = service.ListTours(ctx); err != nil {
@@ -68,20 +79,32 @@ func run(ctx context.Context, workspace, output string) error {
 			continue
 		}
 
-		view, openErr := service.OpenTour(ctx, path)
-		if openErr != nil {
-			return fmt.Errorf("opening %q: %w", path, openErr)
+		view, steps, recErr := record(ctx, service, path)
+		if recErr != nil {
+			return recErr
 		}
 
-		out.Views[path] = view
+		out.Views[path], out.Steps[path] = view, steps
 
-		for index := range view.Tour.Steps {
-			step, stepErr := service.Step(ctx, path, index)
-			if stepErr != nil {
-				return fmt.Errorf("resolving step %d of %q: %w", index, path, stepErr)
+		for v := range view.Vars {
+			name := view.Vars[v].Name
+
+			for _, choice := range view.Vars[v].Choices {
+				if _, err = service.SetVar(ctx, path, name, choice); err != nil {
+					return fmt.Errorf("picking %s=%s: %w", name, choice, err)
+				}
+
+				pickedView, pickedSteps, pickErr := record(ctx, service, path)
+				if pickErr != nil {
+					return pickErr
+				}
+
+				out.Picked[path+"|"+name+"="+choice] = picked{View: pickedView, Steps: pickedSteps}
+
+				if _, err = service.SetVar(ctx, path, name, ""); err != nil {
+					return fmt.Errorf("clearing %s: %w", name, err)
+				}
 			}
-
-			out.Steps[path] = append(out.Steps[path], step)
 		}
 	}
 
@@ -101,4 +124,25 @@ func run(ctx context.Context, workspace, output string) error {
 	}
 
 	return nil
+}
+
+// record opens a tour and resolves every step of it.
+func record(ctx context.Context, service *app.Service, path string) (*app.TourView, []*app.StepView, error) {
+	view, err := service.OpenTour(ctx, path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("opening %q: %w", path, err)
+	}
+
+	steps := make([]*app.StepView, 0, len(view.Tour.Steps))
+
+	for index := range view.Tour.Steps {
+		step, stepErr := service.Step(ctx, path, index)
+		if stepErr != nil {
+			return nil, nil, fmt.Errorf("resolving step %d of %q: %w", index, path, stepErr)
+		}
+
+		steps = append(steps, step)
+	}
+
+	return view, steps, nil
 }

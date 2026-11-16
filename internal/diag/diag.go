@@ -42,6 +42,16 @@ const (
 	CodePatternAmbiguous Code = "pattern-ambiguous"
 	// CodeAnchorMoved: `pattern` matched, but not on `line`.
 	CodeAnchorMoved Code = "anchor-moved"
+	// CodeRepoUnknown: a step names a repo the tour's `repos` doesn't define.
+	CodeRepoUnknown Code = "repo-unknown"
+	// CodeRepoMissing: a repo the tour uses isn't checked out on this machine.
+	CodeRepoMissing Code = "repo-missing"
+	// CodeBodyMissing: a step's `body` file doesn't exist or can't be read.
+	CodeBodyMissing Code = "body-missing"
+	// CodeLinkVarUnresolved: a link uses a {{variable}} nothing gives a value for.
+	CodeLinkVarUnresolved Code = "link-var-unresolved"
+	// CodeLinkScheme: a link's URL isn't http or https.
+	CodeLinkScheme Code = "link-scheme"
 )
 
 type (

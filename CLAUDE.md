@@ -9,7 +9,7 @@ product design and the source of truth for what gets built; milestones M0 to M5 
   root package, and `go:embed` can't reach up a directory.
 - `internal/cli`: cobra commands. No arguments or a folder opens the app; a subcommand runs headless.
 - `internal/app`: the Wails service the frontend calls. It is the trust boundary: validate every argument here.
-- `internal/tour`: discovery, parsing and the model. `Parse` keeps the document as an ordered tree (`Tour.Raw`) so
+- `internal/tour`: discovery, parsing, the model, and `Watch` (live reload). `Parse` keeps the document as an ordered tree (`Tour.Raw`) so
   unknown fields and key order survive.
 - `internal/orderedjson`: the ordered JSON tree behind that.
 - `internal/gitsrc`: `FileSource`, reading files confined to a root. `Confine` is the path-escape check.
@@ -17,6 +17,14 @@ product design and the source of truth for what gets built; milestones M0 to M5 
 - `internal/walk`: resolves a step against the code. The app and `docent validate` both go through it; keep it
   that way so they can't disagree.
 - `internal/validate`: turns resolved steps into diagnostics.
+- `internal/workspace`: `docent.json` and the user config, and `RepoResolver`, which maps a tour's repos to local
+  checkouts (mapping, then sibling folder, then origin URL).
+- `internal/links`: expands `{{var}}` link templates and refuses anything that isn't http(s).
+- `internal/editor`: `Launcher`, open-in-editor with detection and fallback. Commands come from built-in presets or
+  the user config only, never from a tour or a workspace file.
+- `internal/core`: wires the services for one opened folder. The app and every CLI command build a `core.Core`.
+- `internal/guide`: `guide.md`, the authoring guide `docent guide` prints. It documents only what is built: update
+  it in the same change as any tour-format or CLI change.
 - `internal/diag`: the diagnostic type and codes. The JSON shape and the codes are a stable contract: add, never
   rename or reuse.
 - `internal/logs`: the file logger (`~/Library/Logs/docent/docent.log`). Stdout belongs to command output.
@@ -53,5 +61,7 @@ make test_e2e ARGS=--ui # browser tests only
   `gitsrc.Memory`, `tour.MemoryStore`.
 - `internal/tour/testdata/corpus` is real-world tours, byte for byte, with `manifest.json` recording their source
   and `licenses/` their license texts. Don't edit them; `TestCorpus` is the proof that the format is a superset.
+- CLI tests pass `UserConfigPath` and `LogDir` so they never touch the real `~/.config/docent` or log folder. Keep
+  new tests hermetic the same way.
 - Browser tests run the production bundle in WebKit with `--mode mock`, which swaps `src/lib/backend.ts` for
   `backend.mock.ts`. The fixture workspace is `frontend/e2e/testdata/workspace`.

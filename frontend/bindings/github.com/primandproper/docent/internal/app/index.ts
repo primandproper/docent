@@ -11,5 +11,6 @@ export type {
     StepView,
     TourSummary,
     TourView,
+    VarView,
     Workspace
 } from "./models.js";

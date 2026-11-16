@@ -25,13 +25,36 @@
       <span class="badge amber">Unreviewed draft</span>
     {/if}
     <span class="spacer"></span>
+    {#each session.vars as v (v.name)}
+      {@const choices = v.choices ?? []}
+      <label class="var" title={v.locked ? 'Set with --var on the command line' : v.description}>
+        <span>{v.name}</span>
+        {#if choices.length > 0}
+          <select value={v.value} disabled={v.locked} onchange={(e) => session.setVar(v.name, e.currentTarget.value)}>
+            {#if !choices.includes(v.value)}<option value={v.value}>{v.value || '(unset)'}</option>{/if}
+            {#each choices as choice (choice)}
+              <option value={choice}>{choice}</option>
+            {/each}
+          </select>
+        {:else}
+          <input
+            value={v.value}
+            disabled={v.locked}
+            placeholder="unset"
+            spellcheck="false"
+            autocomplete="off"
+            onchange={(e) => session.setVar(v.name, e.currentTarget.value.trim())}
+          />
+        {/if}
+      </label>
+    {/each}
     {#if diagnostics.length > 0}
       <button class="badge red" onclick={() => (showProblems = !showProblems)} aria-expanded={showProblems}>
         {diagnostics.length}
         {diagnostics.length === 1 ? 'problem' : 'problems'} in this file
       </button>
     {/if}
-    <span class="hint"><kbd>j</kbd><kbd>k</kbd> step <kbd>g</kbd> go to <kbd>⌘R</kbd> reload</span>
+    <span class="hint"><kbd>j</kbd><kbd>k</kbd> step <kbd>g</kbd> go to <kbd>o</kbd> open</span>
   </header>
 
   {#if showProblems && diagnostics.length > 0}
@@ -53,7 +76,7 @@
     {#if hasPane}
       <section class="pane">
         <div class="crumbs">
-          <span class="crumb root">{session.workspace?.name}</span>
+          <span class="crumb root">{step?.repo || session.workspace?.name}</span>
           {#each (step?.path ?? '').split('/').filter(Boolean) as part, i (i)}
             <span class="sep">›</span><span class="crumb">{part}</span>
           {/each}
@@ -70,6 +93,11 @@
             <span class="badge {toneOf(step.location.status)}" title={step.location.detail}>
               {statusLabel(step.location)}
             </span>
+          {/if}
+          {#if step?.kind === 'file' && step.content !== ''}
+            <button class="open" onclick={() => session.openInEditor()} title="Open in your editor (o)">
+              Open in editor
+            </button>
           {/if}
         </div>
 
@@ -152,6 +180,40 @@
 
   .hint kbd + kbd {
     margin-left: 2px;
+  }
+
+  .var {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .var select,
+  .var input {
+    font: inherit;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 6px;
+    max-width: 130px;
+  }
+
+  .open {
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 2px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--raised);
+    color: var(--text);
+  }
+
+  .open:hover {
+    border-color: var(--accent);
   }
 
   .badge {

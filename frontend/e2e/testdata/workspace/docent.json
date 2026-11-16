@@ -1,0 +1,6 @@
+{
+  // The fixture workspace's own config: where the worker repo lives, and the
+  // hosts that tours leave as variables.
+  "repos": { "worker": "worker" },
+  "vars": { "grafana": "https://grafana.example.com" }
+}

@@ -34,8 +34,11 @@
           <span class="number">{i + 1}</span>
           <span class="text">
             <span class="title">{stepTitle(step)}</span>
-            {#if target && step.title}
-              <span class="target">{basename(target)}{step.directory && !step.file ? '/' : ''}</span>
+            {#if target && (step.title || step.repo)}
+              <span class="target">
+                {#if step.repo}<span class="repo">{step.repo}</span>{/if}
+                {#if step.title}{basename(target)}{step.directory && !step.file ? '/' : ''}{/if}
+              </span>
             {/if}
           </span>
           {#if tone !== 'ok'}
@@ -128,6 +131,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .repo {
+    font-family: var(--sans);
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 0 5px;
+    margin-right: 3px;
+    border-radius: 4px;
+    background: var(--hover);
+    color: var(--muted);
   }
 
   .dot {
