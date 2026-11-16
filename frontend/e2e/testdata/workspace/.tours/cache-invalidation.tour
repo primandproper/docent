@@ -1,0 +1,43 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Cache invalidation, end to end",
+  "description": "How a write in the API evicts entries in the edge cache.",
+  "isPrimary": true,
+  "nextTour": "Reading an item",
+  "steps": [
+    {
+      "title": "Why this is worth a tour",
+      "description": "A write to an item has to reach **three** systems before a reader sees it:\n\n1. the API's store\n2. the invalidation queue\n3. the edge cache\n\nThis tour follows one `PUT /items/42` through all of them.\n\n```sh\ncurl -X PUT https://api.example.com/items/42 -d '{\"name\": \"lamp\"}'\n```\n\n<script>alert('tours cannot run code')</script>"
+    },
+    {
+      "title": "The write handler",
+      "file": "api/internal/http/items.go",
+      "pattern": "^func \\(h \\*Handler\\) UpdateItem",
+      "line": 26,
+      "selection": { "start": { "line": 26, "character": 1 }, "end": { "line": 46, "character": 2 } },
+      "description": "Every item update enters here. Note the order: the store write happens **before** the eviction is enqueued.\n\nSee the [cache runbook](https://example.com/runbooks/cache) for what to do when the queue backs up."
+    },
+    {
+      "title": "The purge worker",
+      "file": "worker/src/purge.ts",
+      "pattern": "export async function purge",
+      "line": 5,
+      "description": "The worker retries with exponential backoff. This step's `line` is stale on purpose: the pattern still finds the function, and Docent says how far it moved."
+    },
+    {
+      "file": "worker/src/cache.ts",
+      "line": 3,
+      "description": "This file was deleted after the tour was written."
+    },
+    {
+      "title": "The docs folder",
+      "directory": "docs",
+      "description": "Runbooks live beside the code."
+    },
+    {
+      "title": "Dashboards",
+      "uri": "https://grafana.example.com/d/abc123/items",
+      "description": "Update latency and queue depth are on the items dashboard."
+    }
+  ]
+}

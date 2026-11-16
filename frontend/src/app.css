@@ -1,0 +1,119 @@
+:root {
+  --bg: #ffffff;
+  --panel: #f6f7f9;
+  --raised: #ffffff;
+  --border: #e3e5e9;
+  --text: #1c1e22;
+  --muted: #666d7a;
+  --faint: #9aa0ab;
+  --accent: #4f46e5;
+  --accent-soft: rgba(79, 70, 229, 0.1);
+  --band: rgba(79, 70, 229, 0.09);
+  --hover: rgba(0, 0, 0, 0.045);
+  --amber: #a45a06;
+  --amber-soft: rgba(217, 119, 6, 0.13);
+  --red: #b42318;
+  --red-soft: rgba(217, 45, 32, 0.11);
+  --green: #177245;
+  --shadow: 0 8px 28px rgba(15, 18, 28, 0.16);
+
+  --sans: system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18181b;
+    --panel: #1e1e22;
+    --raised: #26262b;
+    --border: #303036;
+    --text: #e8e8ec;
+    --muted: #a0a0ab;
+    --faint: #6f6f7a;
+    --accent: #9d9bff;
+    --accent-soft: rgba(157, 155, 255, 0.16);
+    --band: rgba(157, 155, 255, 0.13);
+    --hover: rgba(255, 255, 255, 0.06);
+    --amber: #f0b352;
+    --amber-soft: rgba(240, 179, 82, 0.14);
+    --red: #ff8a7a;
+    --red-soft: rgba(255, 138, 122, 0.13);
+    --green: #6bd29b;
+    --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: default;
+}
+
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--muted);
+}
+
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

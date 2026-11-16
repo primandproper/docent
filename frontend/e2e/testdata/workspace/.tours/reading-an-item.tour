@@ -1,0 +1,22 @@
+{
+  "docent": 1,
+  "title": "Reading an item",
+  "description": "The read path, which is where the cache earns its keep.",
+  "tags": ["cache", "read-path"],
+  "generatedBy": { "agent": "claude-code", "at": "2026-11-16T10:00:00Z" },
+  "steps": [
+    {
+      "id": "get-item",
+      "title": "The read handler",
+      "file": "api/internal/http/items.go",
+      "pattern": "^func \\(h \\*Handler\\) GetItem",
+      "line": 15,
+      "description": "Reads go straight to the store on a cache miss."
+    },
+    {
+      "id": "wrap-up",
+      "title": "That's the whole read path",
+      "description": "Short tour, short path."
+    }
+  ]
+}
