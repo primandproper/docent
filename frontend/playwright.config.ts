@@ -16,7 +16,21 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     viewport: { width: 1440, height: 900 },
   },
-  projects: [{ name: 'webkit', use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 900 } } }],
+  projects: [
+    {
+      name: 'webkit',
+      testIgnore: /perf\.spec\.ts/,
+      use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 900 } },
+    },
+    // The performance checks are stopwatches. They run after everything else
+    // has finished, one at a time, so they time the app and not their neighbours.
+    {
+      name: 'perf',
+      testMatch: /perf\.spec\.ts/,
+      dependencies: ['webkit'],
+      use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 900 } },
+    },
+  ],
   webServer: {
     command: `pnpm exec vite preview --mode mock --outDir e2e/dist --host 127.0.0.1 --port ${PORT} --strictPort`,
     url: `http://127.0.0.1:${PORT}`,
