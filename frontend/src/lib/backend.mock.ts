@@ -1,7 +1,7 @@
 // A recorded backend for browser tests: answers come from /fixture.json, which
 // cmd/tools/fixture writes by running the real Go service over a workspace.
 import { isExternalURL } from './api';
-import type { Api, StepView, TourSummary, TourView, Workspace } from './api';
+import type { Api, Card, StepView, TourSummary, TourView, Workspace } from './api';
 
 interface Fixture {
   workspace: Workspace;
@@ -10,6 +10,8 @@ interface Fixture {
   steps: Record<string, StepView[]>;
   /** Steps and views again for each choice of each variable, keyed "path|name=value". */
   picked: Record<string, { view: TourView; steps: StepView[] }>;
+  /** What Go made of each docent-links fence, by tour path and then fence body. */
+  linkFences: Record<string, Record<string, Card[]>>;
 }
 
 declare global {
@@ -87,6 +89,13 @@ export const backend: Api = {
   },
   clone: async (_path, repo) => {
     window.gitActions.push(`clone ${repo}`);
+  },
+  expandLinks: async (path, body) => {
+    const cards = (await fixture()).linkFences[path]?.[body];
+    if (!cards) {
+      throw new Error('this links fence was not recorded in the fixture');
+    }
+    return cards;
   },
   editors: async () => [{ id: 'zed', name: 'Zed' }],
   openInEditor: async (path, index, editorID) => {

@@ -11,6 +11,9 @@ import (
 // FormatVersion is the value of `docent` this build understands.
 const FormatVersion = 1
 
+// LinkKinds are the kinds of link card.
+var LinkKinds = []string{"grafana", "logs", "traces", "runbook", "pr", "issue", "doc", "url"}
+
 type (
 	// Tour is a parsed tour file. Fields from Docent's extensions are only
 	// populated when the file sets `docent`.

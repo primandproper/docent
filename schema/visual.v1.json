@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/primandproper/docent/main/schema/visual.v1.json",
+  "title": "Docent visual",
+  "description": "An animated visual, declared as data. `type` picks the component. In a Markdown body the same object is written as the YAML body of a fence named docent-<type>, without `type`.",
+  "type": "object",
+  "required": ["type"],
+  "oneOf": [
+    { "$ref": "#/$defs/sequence" },
+    { "$ref": "#/$defs/flow" },
+    { "$ref": "#/$defs/state" },
+    { "$ref": "#/$defs/timeline" }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "label": { "type": "string", "minLength": 1 },
+    "node": {
+      "description": "A node, as its id alone or as an id with a label to show.",
+      "oneOf": [
+        { "$ref": "#/$defs/id" },
+        {
+          "type": "object",
+          "required": ["id"],
+          "additionalProperties": false,
+          "properties": { "id": { "$ref": "#/$defs/id" }, "label": { "$ref": "#/$defs/label" } }
+        }
+      ]
+    },
+    "sequence": {
+      "description": "Messages between participants, played in order.",
+      "type": "object",
+      "required": ["type", "participants", "messages"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "sequence" },
+        "title": { "type": "string" },
+        "participants": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "$ref": "#/$defs/node" } },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "label"],
+            "additionalProperties": false,
+            "properties": {
+              "from": { "$ref": "#/$defs/id" },
+              "to": { "$ref": "#/$defs/id" },
+              "label": { "$ref": "#/$defs/label" },
+              "async": { "description": "Drawn dashed: the sender doesn't wait.", "type": "boolean" },
+              "step": { "description": "The id of the tour step this message belongs to.", "$ref": "#/$defs/slug" }
+            }
+          }
+        }
+      }
+    },
+    "flow": {
+      "description": "Packets moving along the edges of a graph.",
+      "type": "object",
+      "required": ["type", "nodes", "edges", "paths"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "flow" },
+        "title": { "type": "string" },
+        "nodes": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/node" } },
+        "edges": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["from", "to"],
+            "additionalProperties": false,
+            "properties": {
+              "from": { "$ref": "#/$defs/id" },
+              "to": { "$ref": "#/$defs/id" },
+              "label": { "$ref": "#/$defs/label" }
+            }
+          }
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["label", "through"],
+            "additionalProperties": false,
+            "properties": {
+              "label": { "$ref": "#/$defs/label" },
+              "through": { "description": "Node ids, each joined to the next by an edge.", "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/id" } },
+              "step": { "$ref": "#/$defs/slug" }
+            }
+          }
+        }
+      }
+    },
+    "state": {
+      "description": "A state machine stepping through transitions.",
+      "type": "object",
+      "required": ["type", "states", "transitions", "run"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "state" },
+        "title": { "type": "string" },
+        "states": { "description": "The first state is the initial one.", "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/node" } },
+        "transitions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "on"],
+            "additionalProperties": false,
+            "properties": {
+              "from": { "$ref": "#/$defs/id" },
+              "to": { "$ref": "#/$defs/id" },
+              "on": { "description": "The event that causes the transition.", "$ref": "#/$defs/label" }
+            }
+          }
+        },
+        "run": { "description": "Events to play, in order, starting from the first state.", "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/label" } }
+      }
+    },
+    "timeline": {
+      "description": "Ordered events across lanes.",
+      "type": "object",
+      "required": ["type", "lanes", "events"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "timeline" },
+        "title": { "type": "string" },
+        "unit": { "description": "What `at` counts, shown on the axis: \"ms\", \"s\".", "type": "string" },
+        "lanes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/node" } },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["lane", "at", "label"],
+            "additionalProperties": false,
+            "properties": {
+              "lane": { "$ref": "#/$defs/id" },
+              "at": { "description": "When the event happens, on the timeline's own scale.", "type": "number", "minimum": 0 },
+              "label": { "$ref": "#/$defs/label" },
+              "step": { "$ref": "#/$defs/slug" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

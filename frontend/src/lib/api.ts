@@ -8,6 +8,7 @@ import type {
   Workspace,
 } from '../../bindings/github.com/primandproper/docent/internal/app';
 import type { Editor, Result as EditorResult } from '../../bindings/github.com/primandproper/docent/internal/editor';
+import type { Card } from '../../bindings/github.com/primandproper/docent/internal/links';
 import { backend } from './backend';
 
 export type {
@@ -39,6 +40,8 @@ export interface Api {
   fetch(path: string, repo: string): Promise<void>;
   /** Clones one of the open tour's missing repos. Call only once the reader has agreed. */
   clone(path: string, repo: string): Promise<void>;
+  /** Turns the body of a docent-links fence into cards, with variables filled in. */
+  expandLinks(path: string, body: string): Promise<Card[]>;
   editors(): Promise<Editor[]>;
   /** Opens a file step in an editor: the one with this id, or the reader's default when empty. */
   openInEditor(path: string, index: number, editorID: string): Promise<EditorResult>;

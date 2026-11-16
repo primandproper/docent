@@ -18,7 +18,7 @@ test.describe('tour picker', () => {
     await page.goto('/');
 
     const tours = page.locator('.tour');
-    await expect(tours).toHaveCount(3);
+    await expect(tours).toHaveCount(4);
     await expect(tours.nth(0)).toContainText(MAIN);
     await expect(tours.nth(0)).toContainText('1 problem');
     await expect(tours.nth(0)).toContainText('6 steps');
@@ -33,7 +33,7 @@ test.describe('tour picker', () => {
 
   test('filters with / and opens with the keyboard', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('.tour')).toHaveCount(3);
+    await expect(page.locator('.tour')).toHaveCount(4);
 
     await page.keyboard.press('/');
     await expect(page.getByRole('searchbox')).toBeFocused();

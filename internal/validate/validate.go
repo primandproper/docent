@@ -4,12 +4,17 @@ package validate
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/primandproper/docent/internal/anchor"
 	"github.com/primandproper/docent/internal/diag"
 	"github.com/primandproper/docent/internal/tour"
+	"github.com/primandproper/docent/internal/visual"
 	"github.com/primandproper/docent/internal/walk"
 
 	"github.com/primandproper/primitives-go/v2/observability"
@@ -75,6 +80,7 @@ func (v *validator) Tour(ctx context.Context, path string) ([]diag.Diagnostic, e
 		}
 
 		diags = append(diags, narrativeDiagnostics(t, i, step)...)
+		diags = append(diags, embedDiagnostics(t, i, step)...)
 	}
 
 	logger.WithValue("diagnostics", len(diags)).Debug("validated tour")
@@ -206,6 +212,168 @@ func narrativeDiagnostics(t *tour.Tour, index int, step *walk.Step) []diag.Diagn
 	}
 
 	return out
+}
+
+var stepLink = regexp.MustCompile(`docent:step/([A-Za-z0-9._-]+)`)
+
+// embedDiagnostics checks what a step embeds: its `visual`, the docent-*
+// fences in its narrative, and every link to another step.
+func embedDiagnostics(t *tour.Tour, index int, step *walk.Step) []diag.Diagnostic {
+	var out []diag.Diagnostic
+
+	s := &t.Steps[index]
+
+	report := func(code diag.Code, field, where, message string) {
+		tokens := []any{"steps", index, field}
+		if where != "" {
+			for _, token := range strings.Split(where, "/") {
+				tokens = append(tokens, token)
+			}
+		}
+
+		out = append(out, diag.Diagnostic{
+			File: t.Path, Pointer: diag.Pointer(tokens...), Step: t.StepLabel(index),
+			Severity: diag.SeverityError, Code: code, Message: message,
+		})
+	}
+
+	knownStep := func(id string) bool {
+		for i := range t.Steps {
+			if t.Steps[i].ID == id {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	checkVisual := func(value any, field, prefix string) {
+		problems, err := visual.Validate(value)
+		if err != nil {
+			report(diag.CodeVisualInvalid, field, "", prefix+err.Error())
+			return
+		}
+
+		for i := range problems {
+			p := &problems[i]
+
+			where, message := "", prefix+p.Message
+			if p.Where != "" {
+				message = prefix + p.Where + ": " + p.Message
+			}
+
+			// Only the `visual` field is JSON the pointer can reach into.
+			if field == "visual" {
+				where, message = p.Where, p.Message
+			}
+
+			report(diag.CodeVisualInvalid, field, where, message)
+		}
+
+		for _, id := range visual.StepRefs(value) {
+			if !knownStep(id) {
+				report(diag.CodeStepLinkUnknown, field, "", fmt.Sprintf("%sthe visual links to step %q, which this tour doesn't have", prefix, id))
+			}
+		}
+	}
+
+	if len(s.Visual) > 0 {
+		var value any
+		if err := json.Unmarshal(s.Visual, &value); err == nil {
+			checkVisual(value, "visual", "")
+		}
+	}
+
+	// The narrative is the body file when there is one, else the description.
+	field, text := "description", s.Description
+	if step.Body != "" {
+		field, text = "body", step.Body
+	}
+
+	fences := visual.Fences(text)
+
+	for i := range fences {
+		f := &fences[i]
+		prefix := fmt.Sprintf("the %s fence on line %d: ", f.Lang, f.Line)
+
+		switch {
+		case f.Lang == visual.LinksFence:
+			for _, problem := range fencedLinks(f) {
+				report(diag.CodeVisualInvalid, field, "", prefix+problem)
+			}
+		case strings.HasPrefix(f.Lang, visual.FencePrefix):
+			value, err := visual.FromFence(f)
+			if err != nil {
+				report(diag.CodeVisualInvalid, field, "", prefix+err.Error())
+				continue
+			}
+
+			checkVisual(value, field, prefix)
+		}
+	}
+
+	for _, match := range stepLink.FindAllStringSubmatch(text, -1) {
+		if !knownStep(match[1]) {
+			report(diag.CodeStepLinkUnknown, field, "", fmt.Sprintf("links to step %q, which this tour doesn't have", match[1]))
+		}
+	}
+
+	return out
+}
+
+// fencedLinks checks the array of links in a docent-links fence.
+func fencedLinks(f *visual.Fence) []string {
+	fenced, err := FencedLinks(f.Body)
+	if err != nil {
+		return []string{err.Error()}
+	}
+
+	var problems []string
+
+	for i := range fenced {
+		link := &fenced[i]
+
+		switch {
+		case link.Title == "" || link.URL == "":
+			problems = append(problems, fmt.Sprintf("link %d needs a `title` and a `url`", i+1))
+		case !slices.Contains(tour.LinkKinds, link.Kind):
+			problems = append(problems, fmt.Sprintf("link %q has kind %q; kinds are %s", link.Title, link.Kind, strings.Join(tour.LinkKinds, ", ")))
+		}
+	}
+
+	return problems
+}
+
+// FencedLinks decodes the body of a docent-links fence: a YAML (or JSON)
+// array of links, the same shape as a step's `links`.
+func FencedLinks(body string) ([]tour.Link, error) {
+	value, err := visual.Decode(body)
+	if err != nil {
+		return nil, err
+	}
+
+	list, ok := value.([]any)
+	if !ok {
+		return nil, errors.New("a docent-links fence holds a list of links")
+	}
+
+	out := make([]tour.Link, 0, len(list))
+
+	for i, item := range list {
+		object, isObject := item.(map[string]any)
+		if !isObject {
+			return nil, fmt.Errorf("link %d is not a set of fields", i+1)
+		}
+
+		field := func(name string) string {
+			s, _ := object[name].(string) //nolint:errcheck // a missing or non-string field reads as empty
+			return s
+		}
+
+		out = append(out, tour.Link{Kind: field("kind"), Title: field("title"), URL: field("url"), Description: field("description")})
+	}
+
+	return out, nil
 }
 
 func anchorPointerAndHint(index int, s *tour.Step, loc *anchor.Location) (pointer, hint string) {

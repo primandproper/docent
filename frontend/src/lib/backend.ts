@@ -21,6 +21,7 @@ export const backend: Api = {
   setWorkingTree: (on) => Service.SetWorkingTree(on),
   fetch: (path, repo) => Service.Fetch(path, repo),
   clone: (path, repo) => Service.Clone(path, repo),
+  expandLinks: async (path, body) => (await Service.ExpandLinks(path, body)) ?? [],
   editors: async () => (await Service.Editors()) ?? [],
   openInEditor: async (path, index, editorID) => required(await Service.OpenInEditor(path, index, editorID), 'result'),
   copy: (text) => Clipboard.SetText(text),

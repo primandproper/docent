@@ -64,6 +64,13 @@ const (
 	// CodeMapFocusUnknown: a step's `mapFocus` names something the map doesn't
 	// define. Edges must be named with Mermaid's `id@` syntax to be focused.
 	CodeMapFocusUnknown Code = "map-focus-unknown"
+	// CodeVisualInvalid: a visual (a step's `visual`, or a docent-* fence in a
+	// body) doesn't match the visual schema, or refers to something it
+	// doesn't define.
+	CodeVisualInvalid Code = "visual-invalid"
+	// CodeStepLinkUnknown: a docent:step link, or a visual's `step`, names a
+	// step the tour doesn't have.
+	CodeStepLinkUnknown Code = "step-link-unknown"
 	// CodeBodyMissing: a step's `body` file doesn't exist or can't be read.
 	CodeBodyMissing Code = "body-missing"
 	// CodeLinkVarUnresolved: a link uses a {{variable}} nothing gives a value for.

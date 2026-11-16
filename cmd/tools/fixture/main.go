@@ -17,8 +17,10 @@ import (
 
 	"github.com/primandproper/docent/internal/app"
 	"github.com/primandproper/docent/internal/core"
+	"github.com/primandproper/docent/internal/links"
 	"github.com/primandproper/docent/internal/orderedjson"
 	"github.com/primandproper/docent/internal/tour"
+	"github.com/primandproper/docent/internal/visual"
 )
 
 type (
@@ -28,9 +30,12 @@ type (
 		Steps map[string][]*app.StepView `json:"steps"`
 		// Picked holds each tour again for every choice of every variable that
 		// has choices, keyed "path|name=value".
-		Picked    map[string]picked `json:"picked"`
-		Workspace app.Workspace     `json:"workspace"`
-		Tours     []app.TourSummary `json:"tours"`
+		Picked map[string]picked `json:"picked"`
+		// LinkFences holds what the service made of each docent-links fence,
+		// keyed by tour path and then by the fence's body.
+		LinkFences map[string]map[string][]links.Card `json:"linkFences"`
+		Workspace  app.Workspace                      `json:"workspace"`
+		Tours      []app.TourSummary                  `json:"tours"`
 	}
 
 	picked struct {
@@ -68,10 +73,11 @@ func run(ctx context.Context, testdata, output string) error {
 	service := app.NewService(root, services, nil, nil, nil)
 
 	out := fixture{
-		Workspace: service.Workspace(),
-		Views:     map[string]*app.TourView{},
-		Steps:     map[string][]*app.StepView{},
-		Picked:    map[string]picked{},
+		Workspace:  service.Workspace(),
+		Views:      map[string]*app.TourView{},
+		Steps:      map[string][]*app.StepView{},
+		Picked:     map[string]picked{},
+		LinkFences: map[string]map[string][]links.Card{},
 	}
 
 	if out.Tours, err = service.ListTours(ctx); err != nil {
@@ -90,6 +96,24 @@ func run(ctx context.Context, testdata, output string) error {
 		}
 
 		out.Views[path], out.Steps[path] = view, steps
+		out.LinkFences[path] = map[string][]links.Card{}
+
+		for _, step := range steps {
+			fences := visual.Fences(step.Body)
+			for i := range fences {
+				if fences[i].Lang != visual.LinksFence {
+					continue
+				}
+
+				// The frontend reads a fence's text from the rendered page,
+				// where it ends with a newline.
+				body := fences[i].Body + "\n"
+
+				if out.LinkFences[path][body], err = service.ExpandLinks(ctx, path, body); err != nil {
+					return fmt.Errorf("expanding a links fence of %q: %w", path, err)
+				}
+			}
+		}
 
 		for v := range view.Vars {
 			name := view.Vars[v].Name

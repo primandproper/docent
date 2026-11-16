@@ -13,6 +13,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as editor$0 from "../editor/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as links$0 from "../links/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -31,6 +34,15 @@ export function Clone(path: string, repo: string): $CancellablePromise<void> {
  */
 export function Editors(): $CancellablePromise<editor$0.Editor[] | null> {
     return $Call.ByID(136043198);
+}
+
+/**
+ * ExpandLinks turns the links written in a docent-links fence into cards,
+ * filling in variables the same way a step's own `links` are. The frontend
+ * hands over the fence body as written; nothing in it is trusted.
+ */
+export function ExpandLinks(path: string, body: string): $CancellablePromise<links$0.Card[] | null> {
+    return $Call.ByID(4225644801, path, body);
 }
 
 /**

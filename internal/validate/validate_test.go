@@ -165,3 +165,59 @@ func TestValidator_Tour(T *testing.T) {
 		test.Eq(t, diag.CodeJSONSyntax, diags[0].Code)
 	})
 }
+
+func TestValidator_Embeds(T *testing.T) {
+	T.Parallel()
+
+	find := func(diags []diag.Diagnostic, code diag.Code) []string {
+		var out []string
+
+		for i := range diags {
+			if diags[i].Code == code {
+				out = append(out, diags[i].Pointer+" "+diags[i].Message)
+			}
+		}
+
+		return out
+	}
+
+	T.Run("valid visuals, fences and step links are clean", func(t *testing.T) {
+		t.Parallel()
+
+		diags, err := newValidator(`{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "See [b](docent:step/b).\n\n`+"```"+`docent-sequence\nparticipants: [x, y]\nmessages:\n  - { from: x, to: y, label: hi, step: b }\n`+"```"+`\n\n`+"```"+`docent-links\n- { kind: doc, title: Docs, url: \"https://example.com\" }\n`+"```"+`",
+			  "visual": { "type": "timeline", "lanes": ["w"], "events": [{ "lane": "w", "at": 0, "label": "go" }] } },
+			{ "id": "b", "description": "d" }
+		]}`).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		test.Len(t, 0, diags, test.Sprintf("%+v", diags))
+	})
+
+	T.Run("a broken `visual` is pointed at inside the JSON", func(t *testing.T) {
+		t.Parallel()
+
+		diags, err := newValidator(`{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "d", "visual": { "type": "sequence", "participants": ["x", "y"], "messages": [{ "from": "x", "to": "z", "label": "hi", "step": "gone" }] } }
+		]}`).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		test.Eq(t, []string{`/steps/0/visual/messages/0/to "z" is not one of the participants (x, y)`}, find(diags, diag.CodeVisualInvalid))
+		test.Len(t, 1, find(diags, diag.CodeStepLinkUnknown))
+	})
+
+	T.Run("a broken fence says which fence, by line", func(t *testing.T) {
+		t.Parallel()
+
+		diags, err := newValidator(`{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "intro\n\n`+"```"+`docent-state\nstates: [idle, busy]\ntransitions:\n  - { from: idle, to: busy, on: go }\nrun: [stop]\n`+"```"+`\n\n`+"```"+`docent-pie\nx: 1\n`+"```"+`\n\n`+"```"+`docent-links\n- { kind: slack, title: Chat, url: \"https://x\" }\n- { kind: doc }\n`+"```"+`\n\n[gone](docent:step/nowhere)" }
+		]}`).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+
+		invalid := find(diags, diag.CodeVisualInvalid)
+		must.Len(t, 4, invalid, must.Sprintf("%+v", invalid))
+		test.StrContains(t, invalid[0], `/steps/0/description the docent-state fence on line 3: run/0: state "idle" has no transition on "stop"`)
+		test.StrContains(t, invalid[1], `the docent-pie fence on line 10: type: there is no "pie" visual`)
+		test.StrContains(t, invalid[2], `link "Chat" has kind "slack"`)
+		test.StrContains(t, invalid[3], "link 2 needs a `title` and a `url`")
+		test.Eq(t, []string{`/steps/0/description links to step "nowhere", which this tour doesn't have`}, find(diags, diag.CodeStepLinkUnknown))
+	})
+}

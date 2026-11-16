@@ -1,9 +1,14 @@
 <script lang="ts">
+  import { mount, unmount } from 'svelte';
+  import { parse as parseYAML } from 'yaml';
   import { api, isExternalURL } from '../lib/api';
   import { onSchemeChange, renderDiagram } from '../lib/diagram';
   import { parseInternal } from '../lib/internal';
   import { renderMarkdown } from '../lib/markdown';
   import { session } from '../lib/session.svelte';
+  import { VISUAL_TYPES } from '../lib/visuals';
+  import LinkCards from './LinkCards.svelte';
+  import Visual from './visuals/Visual.svelte';
 
   let { source }: { source: string } = $props();
 
@@ -47,8 +52,45 @@
         });
     }
 
+    // Docent's own fences become components: the four visuals, and link cards.
+    const mounted: Record<string, unknown>[] = [];
+    const replace = (pre: HTMLElement | null, build: (target: HTMLElement) => Record<string, unknown>) => {
+      if (stale || !pre?.isConnected) {
+        return;
+      }
+      const holder = document.createElement('div');
+      holder.className = 'embed';
+      pre.replaceWith(holder);
+      mounted.push(build(holder));
+    };
+
+    for (const code of host.querySelectorAll<HTMLElement>('pre > code[class*="language-docent-"]')) {
+      const pre = code.parentElement;
+      const kind = /language-docent-([\w-]+)/.exec(code.className)?.[1] ?? '';
+      const body = code.textContent ?? '';
+
+      if (kind === 'links') {
+        api
+          .expandLinks(session.path, body)
+          .then((cards) => replace(pre, (target) => mount(LinkCards, { target, props: { cards } })))
+          .catch(() => pre?.classList.add('broken-diagram'));
+      } else if ((VISUAL_TYPES as readonly string[]).includes(kind)) {
+        let value: unknown = null;
+        let problem = '';
+        try {
+          value = { ...(parseYAML(body) as object), type: kind };
+        } catch (err) {
+          problem = err instanceof Error ? err.message.split('\n')[0] : 'it is not valid YAML';
+        }
+        replace(pre, (target) => mount(Visual, { target, props: { value, problem } }));
+      }
+    }
+
     return () => {
       stale = true;
+      for (const component of mounted) {
+        void unmount(component);
+      }
     };
   });
 
@@ -186,6 +228,13 @@
   .markdown :global(figure.diagram svg) {
     max-width: 100%;
     height: auto;
+  }
+
+  .markdown :global(.embed) {
+    /* Embeds are controls, not prose: they don't take part in text selection. */
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
   }
 
   .markdown :global(.jumps) {

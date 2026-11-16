@@ -11,3 +11,11 @@ const TourV1ID = "https://raw.githubusercontent.com/primandproper/docent/main/sc
 //
 //go:embed tour.v1.json
 var TourV1 []byte
+
+// VisualV1ID is the canonical URL of the version 1 visual schema.
+const VisualV1ID = "https://raw.githubusercontent.com/primandproper/docent/main/schema/visual.v1.json"
+
+// VisualV1 is the version 1 schema for animated visuals.
+//
+//go:embed visual.v1.json
+var VisualV1 []byte

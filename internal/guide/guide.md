@@ -8,12 +8,19 @@ is everything you need to produce one that validates.
 
 1. Explore every repo the tour touches before writing anything.
 2. `docent new <slug>` scaffolds `.tours/<slug>.tour` and `.tours/<slug>/` for step bodies.
-3. Write steps. After each one, run `docent resolve .tours/<slug>.tour --step <id>` and read what it prints. That is
+3. Write the system map first (see below): it forces you to decide what the systems are and how they connect.
+4. Write steps. After each one, run `docent resolve .tours/<slug>.tour --step <id>` and read what it prints. That is
    the code the reader will see highlighted. If it isn't what you meant, fix the anchor.
-4. Run `docent validate --strict --json .tours/<slug>.tour` and fix every diagnostic. Repeat until it prints an empty
+5. Run `docent validate --strict --json .tours/<slug>.tour` and fix every diagnostic. Repeat until it prints an empty
    `diagnostics` array and exits 0.
+6. Run `docent stamp --hashes .tours/<slug>.tour`. It records the commit of each repo the tour is correct against,
+   which is what lets Docent tell a reader later how far the code has moved.
 
 Never guess a line number. Never finish with warnings.
+
+Docent reads each repo at its `ref` as of the last fetch, not at whatever is checked out, so uncommitted edits don't
+count. Pass `--working-tree` to `validate` and `resolve` only if you are deliberately writing against uncommitted
+code.
 
 ## Shape of a good tour
 
@@ -72,8 +79,9 @@ Run `docent schema` for the full JSON Schema.
 | Field | Meaning |
 | --- | --- |
 | `title`, `description` | Shown in the tour picker. Required: `title`. |
-| `repos` | The repos the tour touches, by a short name you choose. `remote` is the git URL. Docent finds each one on the reader's machine by that URL, so use the real one (`git remote get-url origin`). |
+| `repos` | The repos the tour touches, by a short name you choose. `remote` is the git URL. Docent finds each one on the reader's machine by that URL, so use the real one (`git remote get-url origin`). `ref` is the branch the tour follows (usually `main`); use a tag or commit only for a tour about how something worked at that point. Leave `stamp` to `docent stamp`. |
 | `vars` | Variables for link URLs: `{ "default"?, "choices"?, "description"? }`. |
+| `map` | The system map: `{ "file": "<slug>/map.mmd" }` (preferred) or `{ "mermaid": "..." }`. |
 | `tags` | Strings for filtering in the picker. |
 | `generatedBy` | Always set it: `{ "agent", "model"?, "at" }` with an RFC 3339 time. It marks the tour as an unreviewed draft. |
 | `reviewedBy` | Never set it. A person adds it after walking the tour. |
@@ -94,6 +102,9 @@ Run `docent schema` for the full JSON Schema.
 | `directory` | Show a folder's listing and README instead of a file. |
 | `uri` | Show a single web link instead of code. |
 | `links` | Link cards: `{ "kind", "title", "url", "description"? }`. |
+| `mapFocus` | Ids of the map nodes and edges this step is about. Give every step that touches a system one. |
+| `visual` | One animated visual, shown above the narrative. See below. |
+| `ref` | Read this one step at a different ref, to show code as it was before a change. |
 
 A step with none of `file`, `directory` or `uri` is content only: the narrative takes the whole window, like a slide.
 
@@ -120,6 +131,59 @@ It prints the status, the file and the anchored lines. `ok` is the only acceptab
 lines and there is no `line`. `missing` means the file, the repo or the pattern wasn't found, and the output says
 which.
 
+## The system map
+
+The map is one Mermaid flowchart per tour, shown beside every step with the current step's part highlighted. Keep it
+to the systems the tour visits: 4 to 9 nodes.
+
+```
+flowchart LR
+    client([Client]) --> api[API]
+    api e1@--> queue[(Queue)]
+    queue e2@--> worker[Worker]
+    worker e3@--> cache[(Edge cache)]
+```
+
+- A step's `mapFocus` lists node ids (`api`) and edge ids (`e1`).
+- An edge can only be focused if it is named with Mermaid's edge-id syntax: `api e1@--> queue`. Name every edge a
+  step is about.
+- A step about a hop between systems focuses the edge and both ends: `["api", "e1", "queue"]`.
+
+Clicking a node takes the reader to the first step that focuses it, so the map is also the tour's index.
+
+## Visuals
+
+Use a visual when order or timing is the point: an async hop, retries, a state changing. Use a Mermaid diagram (a
+```` ```mermaid ```` fence in a body) for structure that doesn't move. Don't decorate: a step that is clear from its
+code needs neither.
+
+Write a visual as a fence in a body file. The body of the fence is YAML.
+
+````
+```docent-sequence
+participants: [client, api, queue, worker, cache]
+messages:
+  - { from: client, to: api, label: "PUT /items/42" }
+  - { from: api, to: queue, label: "enqueue invalidate(42)", async: true, step: enqueue }
+  - { from: queue, to: worker, label: "deliver" }
+  - { from: worker, to: cache, label: "PURGE /items/42", step: purge }
+```
+````
+
+| Fence | Shows | Fields |
+| --- | --- | --- |
+| `docent-sequence` | Messages between participants, in order | `participants`, `messages[{from, to, label, async?, step?}]` |
+| `docent-flow` | A packet moving along the edges of a graph | `nodes`, `edges[{from, to, label?}]`, `paths[{label, through[], step?}]` |
+| `docent-state` | A state machine stepping through events | `states` (the first is the start), `transitions[{from, to, on}]`, `run[]` (the events to play) |
+| `docent-timeline` | Events across lanes on a time axis | `lanes`, `events[{lane, at, label, step?}]`, `unit?` |
+
+All four take an optional `title`. Anywhere a list of nodes is wanted (`participants`, `nodes`, `states`, `lanes`),
+an item is an id (`api`) or `{ id: api, label: "The API" }`. `step` is the id of the tour step a frame belongs to;
+the reader gets a button to jump there. Every id a visual refers to must be one it declares, each consecutive pair in
+a flow path's `through` needs an edge, and a state machine's `run` must be playable from its first state.
+
+The same object, with `"type": "sequence"` (or `flow`, `state`, `timeline`) added, can be a step's `visual` field.
+
 ## Links
 
 Whenever the narrative mentions a metric, a log query, an alert, a runbook, a PR or an issue, add a link card so the
@@ -129,7 +193,21 @@ Never hard-code an environment or an internal hostname. Use `{{name}}` variables
 between (like `env`) under the tour's `vars` with `choices` and a `default`, and leave hosts (like `grafana`) to the
 reader's `docent.json`. A variable with no value anywhere is a validation warning, and its card shows disabled.
 
-Only `http` and `https` URLs are allowed.
+Only `http` and `https` URLs are allowed, plus Docent's own:
+
+- `docent:step/<id>` jumps to a step of this tour.
+- `docent:tour/<file>#<id>` opens another tour (named by the end of its path, like `cache-invalidation.tour`) at a
+  step.
+
+Both work as link cards and as ordinary Markdown links in a body: `[the write handler](docent:step/write-path)`.
+
+Cards can also be written inside a body, where they appear in the flow of the text:
+
+````
+```docent-links
+- { kind: runbook, title: Cache runbook, url: "{{wiki}}/runbooks/cache" }
+```
+````
 
 ## Body files
 
@@ -138,6 +216,19 @@ loaded. Write for someone reading beside the highlighted code: refer to what the
 use a list when order matters.
 
 Name bodies so they sort in step order: `01-overview.md`, `02-write-path.md`.
+
+## Refreshing a tour that has fallen behind
+
+`docent stale --json` lists the tours whose code has moved: for each, why, and the diff since the stamp of every file
+a step anchors into. For each listed tour:
+
+1. Read the diffs. Decide, step by step, whether the narrative is still true.
+2. Fix anchors (`moved`: update `line`), rewrite steps whose code `changed`, and re-anchor or drop steps whose code
+   is `missing`. The diagnostic names the commit that removed it, which usually says what replaced it.
+3. Remove `reviewedBy` and set `generatedBy` again: the tour is a draft until a person walks it.
+4. Validate until clean, then `docent stamp --hashes`.
+
+`docent stamp` refuses while any anchor has drifted. That is deliberate: stamping says "this is right as of now".
 
 ## Diagnostics
 
@@ -162,4 +253,12 @@ Name bodies so they sort in step order: `01-overview.md`, `02-write-path.md`.
 | `body-missing` | The `body` path is wrong. It is relative to the tour file. |
 | `link-var-unresolved` | Declare the variable in `vars` with a default, or tell the person which value to configure. |
 | `link-scheme` | Not an http(s) URL. |
+| `map-missing` | The `map` file path is wrong (it is relative to the tour file), or it isn't a flowchart. |
+| `map-focus-unknown` | A `mapFocus` id isn't a node, or an edge named with `id@`, in the map. |
+| `visual-invalid` | A visual doesn't match its schema or refers to an id it doesn't declare. The message says where. |
+| `step-link-unknown` | A `docent:step/` link or a visual's `step` names a step that doesn't exist. |
+| `content-changed` | The anchored code was edited since the stamp. Check the step is still true. |
+| `code-removed` | The anchored code is gone. `docent stale` shows what replaced it. |
+| `stamp-unreachable` | The stamp commit isn't in the local repo. Tell the person to fetch. |
+| `ref-missing` | A pinned commit isn't in the local repo. Tell the person to fetch. |
 | `extension-ignored` | The tour uses Docent fields without `"docent": 1`. |

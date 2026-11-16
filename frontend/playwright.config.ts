@@ -8,6 +8,8 @@ export default defineConfig({
   testDir: 'e2e',
   outputDir: 'e2e/results',
   fullyParallel: true,
+  // Each page loads Mermaid, Shiki and ELK. More than a few at once and they starve each other.
+  workers: 4,
   forbidOnly: !!process.env.CI,
   reporter: 'list',
   use: {

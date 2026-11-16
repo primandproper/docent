@@ -86,7 +86,7 @@ func (a *application) newGuideCommand() *cobra.Command {
 func (a *application) newNewCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "new <slug>",
-		Short: "Scaffold .tours/<slug>.tour and a folder for its step bodies.",
+		Short: "Scaffold .tours/<slug>.tour, with a folder for its step bodies and a map stub.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			dir, err := os.Getwd()
@@ -107,8 +107,9 @@ func (a *application) scaffold(dir, slug string) error {
 
 	tourPath := filepath.Join(dir, ".tours", slug+tour.Extension)
 	bodyPath := filepath.Join(dir, ".tours", slug, "01-overview.md")
+	mapPath := filepath.Join(dir, ".tours", slug, "map.mmd")
 
-	for _, path := range []string{tourPath, bodyPath} {
+	for _, path := range []string{tourPath, bodyPath, mapPath} {
 		if _, err := os.Stat(path); err == nil {
 			return fmt.Errorf("%s already exists", path)
 		}
@@ -121,6 +122,7 @@ func (a *application) scaffold(dir, slug string) error {
   "docent": 1,
   "title": %q,
   "description": "",
+  "map": { "file": %q },
   "steps": [
     {
       "id": "overview",
@@ -130,7 +132,9 @@ func (a *application) scaffold(dir, slug string) error {
     }
   ]
 }
-`, schema.TourV1ID, title, slug+"/01-overview.md")
+`, schema.TourV1ID, title, slug+"/map.mmd", slug+"/01-overview.md")
+
+	systemMap := "flowchart LR\n    client([Client]) e1@--> service[Service]\n"
 
 	body := "Say what the reader will understand by the end of this tour, and who it is for.\n"
 
@@ -138,13 +142,13 @@ func (a *application) scaffold(dir, slug string) error {
 		return fmt.Errorf("creating %s: %w", filepath.Dir(bodyPath), err)
 	}
 
-	for path, content := range map[string]string{tourPath: tourJSON, bodyPath: body} {
+	for path, content := range map[string]string{tourPath: tourJSON, bodyPath: body, mapPath: systemMap} {
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
 		}
 	}
 
-	_, err := fmt.Fprintf(a.streams.Stdout, "%s\n%s\n", tourPath, bodyPath)
+	_, err := fmt.Fprintf(a.streams.Stdout, "%s\n%s\n%s\n", tourPath, mapPath, bodyPath)
 
 	return err
 }

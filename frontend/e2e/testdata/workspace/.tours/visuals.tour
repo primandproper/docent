@@ -1,0 +1,45 @@
+{
+  "docent": 1,
+  "title": "Every kind of visual",
+  "description": "One step per animated visual, for the browser tests.",
+  "vars": { "env": { "choices": ["staging", "prod"], "default": "staging" } },
+  "steps": [
+    {
+      "id": "sequence",
+      "title": "A sequence",
+      "description": "Messages between participants.",
+      "body": "visuals/01-sequence.md"
+    },
+    {
+      "id": "flow",
+      "title": "A flow",
+      "description": "This one is declared in the tour file, as the step's `visual`.",
+      "visual": {
+        "type": "flow",
+        "title": "A write, end to end",
+        "nodes": ["client", { "id": "api", "label": "API" }, "queue", "worker", { "id": "cache", "label": "Edge cache" }],
+        "edges": [
+          { "from": "client", "to": "api" },
+          { "from": "api", "to": "queue", "label": "enqueue" },
+          { "from": "queue", "to": "worker" },
+          { "from": "worker", "to": "cache", "label": "purge" }
+        ],
+        "paths": [
+          { "label": "PUT /items/42", "through": ["client", "api", "queue", "worker", "cache"], "step": "sequence" }
+        ]
+      }
+    },
+    {
+      "id": "state",
+      "title": "A state machine",
+      "description": "d",
+      "body": "visuals/03-state.md"
+    },
+    {
+      "id": "timeline",
+      "title": "A timeline",
+      "description": "d",
+      "body": "visuals/04-timeline.md"
+    }
+  ]
+}

@@ -48,7 +48,7 @@
     if (!host || !rendered) {
       return;
     }
-    host.innerHTML = rendered.svg;
+    // Effects run after the DOM is updated, so the SVG below is in place.
     elements = flowchartElements(host, rendered.id);
 
     for (const [id, found] of elements) {
@@ -90,7 +90,10 @@
     {#if failed}
       <p class="problem">The map couldn't be drawn: {failed}</p>
     {/if}
-    <div class="diagram" bind:this={host}></div>
+    <div class="diagram" bind:this={host}>
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -- Mermaid's own output, rendered at securityLevel strict -->
+      {@html rendered?.svg ?? ''}
+    </div>
   </section>
 {:else if session.view?.mapProblem}
   <section class="map" aria-label="System map">

@@ -41,7 +41,7 @@ const docentTour = `{
       "links": [
         { "kind": "grafana", "title": "Update latency p99", "url": "{{grafana}}/d/abc123/items?var-env={{env}}" }
       ],
-      "visual": { "type": "docent-sequence", "participants": ["api", "queue"] },
+      "visual": { "type": "sequence", "participants": ["api", "queue"], "messages": [{ "from": "api", "to": "queue", "label": "enqueue" }] },
       "layout": "split",
       "ref": "v2.0.0"
     }
@@ -91,7 +91,7 @@ func TestParse(T *testing.T) {
 		test.Eq(t, "grafana", step.Links[0].Kind)
 		test.Eq(t, "split", step.Layout)
 		test.Eq(t, "v2.0.0", step.Ref)
-		test.StrContains(t, string(step.Visual), "docent-sequence")
+		test.StrContains(t, string(step.Visual), `"type":"sequence"`)
 		test.Eq(t, "write-path", parsed.StepLabel(0))
 
 		// Unknown fields survive in the raw document.

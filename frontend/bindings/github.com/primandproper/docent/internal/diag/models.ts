@@ -125,6 +125,19 @@ export enum Code {
     CodeMapFocusUnknown = "map-focus-unknown",
 
     /**
+     * CodeVisualInvalid: a visual (a step's `visual`, or a docent-* fence in a
+     * body) doesn't match the visual schema, or refers to something it
+     * doesn't define.
+     */
+    CodeVisualInvalid = "visual-invalid",
+
+    /**
+     * CodeStepLinkUnknown: a docent:step link, or a visual's `step`, names a
+     * step the tour doesn't have.
+     */
+    CodeStepLinkUnknown = "step-link-unknown",
+
+    /**
      * CodeBodyMissing: a step's `body` file doesn't exist or can't be read.
      */
     CodeBodyMissing = "body-missing",

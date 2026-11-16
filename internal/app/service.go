@@ -21,6 +21,7 @@ import (
 	"github.com/primandproper/docent/internal/gitsrc"
 	"github.com/primandproper/docent/internal/links"
 	"github.com/primandproper/docent/internal/tour"
+	"github.com/primandproper/docent/internal/validate"
 	"github.com/primandproper/docent/internal/walk"
 
 	"github.com/primandproper/primitives-go/v2/observability"
@@ -761,4 +762,34 @@ func isHost(s string) bool {
 	return s != "" && !strings.HasPrefix(s, "-") && !strings.ContainsFunc(s, func(r rune) bool {
 		return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-", r)
 	})
+}
+
+// ExpandLinks turns the links written in a docent-links fence into cards,
+// filling in variables the same way a step's own `links` are. The frontend
+// hands over the fence body as written; nothing in it is trusted.
+func (s *Service) ExpandLinks(ctx context.Context, path, body string) ([]links.Card, error) {
+	_, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	logger := s.logger.WithValue(tourKey, path)
+
+	s.mu.Lock()
+	t, ok := s.open[path]
+	s.mu.Unlock()
+
+	if !ok {
+		return nil, observability.PrepareAndLogError(fmt.Errorf("%q is not open: %w", path, ErrUnknownTour), logger, span, "expanding links")
+	}
+
+	fenced, err := validate.FencedLinks(body)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, logger, span, "reading links")
+	}
+
+	cards := make([]links.Card, 0, len(fenced))
+	for i := range fenced {
+		cards = append(cards, s.core.Vars.Expand(&fenced[i], t.Vars))
+	}
+
+	return cards, nil
 }
