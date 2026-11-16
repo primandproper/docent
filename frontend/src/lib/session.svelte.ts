@@ -211,6 +211,16 @@ class Session {
 
   /** Whether the system map is showing. The reader's choice, kept across tours. */
   mapShown = $state(true);
+  /** Whether the map has the centre pane to itself, in place of the code. */
+  mapLarge = $state(false);
+
+  /** Gives the map the centre pane, or hands it back to the code. Showing it large also shows it. */
+  toggleLargeMap(): void {
+    this.mapLarge = !this.mapLarge;
+    if (this.mapLarge) {
+      this.mapShown = true;
+    }
+  }
 
   /** Follows one of Docent's own links: to a step of this tour, or into another tour. */
   async follow(href: string): Promise<void> {

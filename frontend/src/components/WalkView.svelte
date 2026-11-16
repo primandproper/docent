@@ -15,6 +15,8 @@
   // hides the code, `code` hides the narrative.
   const hasPane = $derived(layout !== 'narrative' && (kind === 'file' || kind === 'directory' || hasAnchors));
   const onlyCode = $derived(layout === 'code' && hasPane);
+  // Only a tour with a map can show one large.
+  const mapLarge = $derived(session.mapLarge && session.mapShown && !!session.view?.map);
   const unreviewed = $derived(!!tour?.generatedBy && (tour.reviewedBy ?? []).length === 0);
 
   let showProblems = $state(false);
@@ -93,18 +95,21 @@
 
   <Freshness />
 
-  <div class="panes" class:no-pane={!hasPane} class:only-code={onlyCode}>
+  <div class="panes" class:no-pane={!hasPane && !mapLarge} class:only-code={onlyCode && !mapLarge}>
     <StepRail />
 
-    {#if hasPane}
+    <!-- Large, the map takes the centre pane from the code and the narrative stays beside it. -->
+    {#if mapLarge}
+      <SystemMap large />
+    {:else if hasPane}
       <CodeArea />
     {/if}
 
-    <div class="reading" hidden={onlyCode}>
-      {#if session.mapShown}
+    <div class="reading" hidden={onlyCode && !mapLarge}>
+      {#if session.mapShown && !mapLarge}
         <SystemMap />
       {/if}
-      <Narrative wide={!hasPane} />
+      <Narrative wide={!hasPane && !mapLarge} />
     </div>
   </div>
 </div>
