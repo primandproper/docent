@@ -73,8 +73,22 @@ make skill    # regenerate skill/ after changing the guide
 
 ## Releasing
 
-Pushing a `v*` tag runs `.github/workflows/release.yaml`: it builds a universal `Docent.app`, signs and notarizes
-it, publishes the zip as a GitHub release, and updates the cask in `primandproper/homebrew-tap`. The secrets it needs
-are listed at the top of the workflow. `scripts/package.sh <version>` builds the unsigned bundle locally.
+Releases are cut from a Mac, with one command:
 
-This repo has a tour of its own: `make build && bin/docent .`
+```sh
+make release VERSION=v0.1.0
+```
+
+It builds a universal `Docent.app`, signs it with the Developer ID Application certificate in your keychain,
+notarizes it, asks once, then publishes the zip as a GitHub release and updates the cask in
+[primandproper/homebrew-tap](https://github.com/primandproper/homebrew-tap). `DRY_RUN=1` stops after signing.
+
+One-time setup, on the Mac that releases:
+
+- A **Developer ID Application** certificate in the login keychain.
+- Notarization credentials stored in the keychain:
+  `xcrun notarytool store-credentials docent --apple-id <you> --team-id <TEAMID>`. It asks for an app-specific
+  password, made at account.apple.com.
+- `gh` logged in as someone who can push to this repo and the tap.
+
+Nothing is kept in files or in GitHub secrets. The icon is rebuilt from `packaging/icon/` with `make icons`.
