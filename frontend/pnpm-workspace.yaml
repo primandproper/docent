@@ -1,0 +1,2 @@
+# Refuse to install any version published less than 14 days ago (in minutes), matching platform-ui-svelte.
+minimumReleaseAge: 20160

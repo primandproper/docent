@@ -1,0 +1,81 @@
+---
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+name: ci
+jobs:
+  # Wails is cgo against WebKit, so everything that compiles Go runs on macOS.
+  check:
+    timeout-minutes: 30
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.x'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install golangci-lint
+        run: brew install golangci-lint
+
+      - name: Set up
+        run: make setup
+
+      - name: Check formatting and generated bindings
+        run: |
+          set -euo pipefail
+
+          make format bindings
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::make format bindings changed files; run it and commit the result"
+            git status --short
+            git diff
+            exit 1
+          fi
+
+      - name: Lint
+        run: make golang_lint lint_frontend
+
+      - name: Test
+        run: make test
+
+      - name: Upload browser test results
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: e2e-results
+          path: frontend/e2e/results
+
+  # shellcheck runs in a container, which macOS runners don't have.
+  shellcheck:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run shellcheck
+        run: make shellcheck

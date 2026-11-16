@@ -1,0 +1,9 @@
+.task
+.wails
+bin
+frontend/dist
+frontend/node_modules
+.tools
+frontend/e2e/dist
+frontend/e2e/public
+frontend/e2e/results
