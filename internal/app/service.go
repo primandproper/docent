@@ -112,6 +112,10 @@ type (
 		// Steps runs parallel to Tour.Steps.
 		Steps []StepSummary `json:"steps"`
 		Vars  []VarView     `json:"vars"`
+		// Map is the tour's system map as Mermaid source, or "".
+		Map string `json:"map"`
+		// MapProblem says why a map the tour names isn't shown.
+		MapProblem string `json:"mapProblem"`
 		// Repos is where each of the tour's repos stands on this machine.
 		Repos []walk.RepoState `json:"repos"`
 		// WorkingTree is set while files are read from disk, not at each ref.
@@ -322,6 +326,10 @@ func (s *Service) OpenTour(ctx context.Context, path string) (*TourView, error) 
 	view := &TourView{
 		Tour: t, Diagnostics: diags, Steps: make([]StepSummary, len(t.Steps)), Vars: s.vars(t),
 		Repos: make([]walk.RepoState, 0, len(t.Repos)), WorkingTree: workingTree,
+	}
+
+	if m := s.core.Walker.Map(ctx, t); m != nil {
+		view.Map, view.MapProblem = m.Source, m.Detail
 	}
 
 	for i := range t.Repos {

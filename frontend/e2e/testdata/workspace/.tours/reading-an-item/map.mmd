@@ -1,0 +1,7 @@
+flowchart LR
+    client([Client]) e0@--> api[API]
+    api e1@--> store[(Store)]
+    api e2@-. invalidate .-> worker[Worker]
+    worker e3@--> cache[(Edge cache)]
+    api --> billing[Billing]
+    click store "docent:step/wrap-up"

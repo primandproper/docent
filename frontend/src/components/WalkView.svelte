@@ -6,6 +6,7 @@
   import Freshness from './Freshness.svelte';
   import Narrative from './Narrative.svelte';
   import StepRail from './StepRail.svelte';
+  import SystemMap from './SystemMap.svelte';
 
   const tour = $derived(session.view?.tour);
   const diagnostics = $derived(session.view?.diagnostics ?? []);
@@ -55,6 +56,16 @@
         {/if}
       </label>
     {/each}
+    {#if session.view?.map || session.view?.mapProblem}
+      <button
+        class="toggle"
+        aria-pressed={session.mapShown}
+        onclick={() => (session.mapShown = !session.mapShown)}
+        title="Show or hide the system map (m)"
+      >
+        Map
+      </button>
+    {/if}
     <button
       class="toggle"
       aria-pressed={session.view?.workingTree ?? false}
@@ -93,10 +104,12 @@
     {#if hasPane}
       <section class="pane">
         <div class="crumbs">
-          <span class="crumb root">{step?.repo || session.workspace?.name}</span>
-          {#each (step?.path ?? '').split('/').filter(Boolean) as part, i (i)}
-            <span class="sep">›</span><span class="crumb">{part}</span>
-          {/each}
+          <span class="trail">
+            <span class="crumb root">{step?.repo || session.workspace?.name}</span>
+            {#each (step?.path ?? '').split('/').filter(Boolean) as part, i (i)}
+              <span class="sep">›</span> <span class="crumb">{part}</span>
+            {/each}
+          </span>
           {#if step && step.location.range.startLine > 0}
             <span class="sep">›</span>
             <span class="crumb line">
@@ -174,7 +187,12 @@
       </section>
     {/if}
 
-    <Narrative wide={!hasPane} />
+    <div class="reading">
+      {#if session.mapShown}
+        <SystemMap />
+      {/if}
+      <Narrative wide={!hasPane} />
+    </div>
   </div>
 </div>
 
@@ -403,6 +421,19 @@
     grid-template-columns: 250px minmax(0, 1fr);
   }
 
+  .reading {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .reading > :global(.narrative) {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+  }
+
   .pane {
     min-width: 0;
     min-height: 0;
@@ -424,6 +455,17 @@
     color: var(--muted);
     white-space: nowrap;
     overflow: hidden;
+  }
+
+  .trail {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .crumbs > :not(.trail):not(.spacer) {
+    flex: none;
   }
 
   .crumb.root {

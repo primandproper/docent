@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/primandproper/docent/internal/tour"
@@ -137,9 +138,14 @@ func (v *Vars) Expand(link *tour.Link, defined []tour.Var) Card {
 		return card
 	}
 
+	// A docent: link moves within the app: to a step, or to another tour.
+	if IsInternal(card.URL) {
+		return card
+	}
+
 	parsed, err := url.Parse(card.URL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		card.Problem = "Only http and https links can be opened"
+		card.Problem = "Only http, https and docent links can be opened"
 		return card
 	}
 
@@ -160,4 +166,21 @@ func list(names []string) string {
 	}
 
 	return out
+}
+
+// IsInternal reports whether a URL is one of Docent's own: `docent:step/<id>`
+// or `docent:tour/<path>#<id>`.
+func IsInternal(link string) bool {
+	rest, ok := strings.CutPrefix(link, "docent:")
+	if !ok {
+		return false
+	}
+
+	for _, kind := range []string{"step/", "tour/"} {
+		if target, found := strings.CutPrefix(rest, kind); found && target != "" {
+			return true
+		}
+	}
+
+	return false
 }

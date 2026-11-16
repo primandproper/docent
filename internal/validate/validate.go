@@ -62,6 +62,8 @@ func (v *validator) Tour(ctx context.Context, path string) ([]diag.Diagnostic, e
 		return diags, nil
 	}
 
+	diags = append(diags, mapDiagnostics(t, v.walker.Map(ctx, t))...)
+
 	for i := range t.Steps {
 		step, stepErr := v.walker.Step(ctx, t, i)
 		if stepErr != nil {
@@ -124,6 +126,44 @@ func stepDiagnostic(t *tour.Tour, index int, step *walk.Step) (diag.Diagnostic, 
 	return d, true
 }
 
+// mapDiagnostics checks the system map and every `mapFocus` against it.
+func mapDiagnostics(t *tour.Tour, m *walk.Map) []diag.Diagnostic {
+	var out []diag.Diagnostic
+
+	if m != nil && m.Problem != "" {
+		out = append(out, diag.Diagnostic{
+			File: t.Path, Pointer: diag.Pointer("map"), Severity: diag.SeverityError, Code: m.Problem, Message: m.Detail,
+		})
+	}
+
+	for i := range t.Steps {
+		for j, id := range t.Steps[i].MapFocus {
+			d := diag.Diagnostic{
+				File:     t.Path,
+				Pointer:  diag.Pointer("steps", i, "mapFocus", j),
+				Step:     t.StepLabel(i),
+				Severity: diag.SeverityError,
+				Code:     diag.CodeMapFocusUnknown,
+			}
+
+			switch {
+			case m == nil:
+				d.Message = fmt.Sprintf("mapFocus names %q, but the tour has no `map`", id)
+			case m.Problem != "" || m.Defined.Has(id):
+				// An unreadable map is reported once, above.
+				continue
+			default:
+				d.Message = fmt.Sprintf("mapFocus names %q, which the map doesn't define", id)
+				d.Hint = "Use a node id, or an edge named in the map with Mermaid's edge-id syntax: `api e1@--> queue`."
+			}
+
+			out = append(out, d)
+		}
+	}
+
+	return out
+}
+
 // narrativeDiagnostics reports problems with a step's body file and links.
 func narrativeDiagnostics(t *tour.Tour, index int, step *walk.Step) []diag.Diagnostic {
 	var out []diag.Diagnostic
@@ -151,7 +191,7 @@ func narrativeDiagnostics(t *tour.Tour, index int, step *walk.Step) []diag.Diagn
 			Step:     t.StepLabel(index),
 			Severity: diag.SeverityError,
 			Code:     diag.CodeLinkScheme,
-			Message:  fmt.Sprintf("link %q: only http and https URLs can be opened", card.Title),
+			Message:  fmt.Sprintf("link %q: only http, https and docent URLs can be opened", card.Title),
 		}
 
 		if len(card.Missing) > 0 {

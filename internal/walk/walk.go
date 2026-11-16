@@ -16,6 +16,7 @@ import (
 	"github.com/primandproper/docent/internal/diag"
 	"github.com/primandproper/docent/internal/gitsrc"
 	"github.com/primandproper/docent/internal/links"
+	"github.com/primandproper/docent/internal/mermaid"
 	"github.com/primandproper/docent/internal/tour"
 	"github.com/primandproper/docent/internal/workspace"
 
@@ -91,12 +92,27 @@ type (
 		// Repo reports where one of a tour's repos stands: found or not, what
 		// is being read, and how far that is from the tour's stamp.
 		Repo(ctx context.Context, t *tour.Tour, name string) (*RepoState, error)
+		// Map loads the tour's system map and lists what it defines. It
+		// returns nil for a tour without one.
+		Map(ctx context.Context, t *tour.Tour) *Map
 		// SetWorkingTree switches between reading at each ref and reading
 		// files as they are on disk, uncommitted changes included.
 		SetWorkingTree(on bool)
 		// Reset forgets what refs resolved to, so a fetch or a new commit is
 		// seen. Call it when the reader reloads.
 		Reset()
+	}
+
+	// Map is a tour's system map.
+	Map struct {
+		_ struct{}
+		// Defined is what the flowchart declares.
+		Defined *mermaid.Map
+		// Source is the Mermaid flowchart, or "" when it couldn't be loaded.
+		Source string
+		// Problem and Detail say why not.
+		Problem diag.Code
+		Detail  string
 	}
 
 	// RepoState is where one of a tour's repos stands on this machine.
@@ -484,4 +500,41 @@ func (w *walker) directory(ctx context.Context, out *Step) error {
 	}
 
 	return nil
+}
+
+func (w *walker) Map(ctx context.Context, t *tour.Tour) *Map {
+	if t.Map == nil {
+		return nil
+	}
+
+	out := &Map{Source: t.Map.Mermaid, Defined: &mermaid.Map{}}
+
+	if t.Map.File != "" {
+		content, err := w.source.ReadFile(ctx, filepath.Dir(t.Path), "", t.Map.File)
+		if err != nil {
+			out.Problem = diag.CodeMapMissing
+			out.Detail = fmt.Sprintf("map file %q could not be read; paths are relative to the tour file", t.Map.File)
+
+			if errors.Is(err, gitsrc.ErrEscapesRoot) {
+				out.Problem = diag.CodePathEscapesRoot
+				out.Detail = fmt.Sprintf("map file %q resolves outside the tour's folder and was not read", t.Map.File)
+			}
+
+			return out
+		}
+
+		out.Source = string(content)
+	}
+
+	if !mermaid.IsFlowchart(out.Source) {
+		out.Source = ""
+		out.Problem = diag.CodeMapMissing
+		out.Detail = "the system map must be a Mermaid flowchart (it should start with `flowchart`)"
+
+		return out
+	}
+
+	out.Defined = mermaid.Parse(out.Source)
+
+	return out
 }

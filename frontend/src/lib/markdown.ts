@@ -20,5 +20,7 @@ export function renderMarkdown(source: string): string {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ['style', 'form', 'input', 'button', 'iframe', 'video', 'audio', 'svg', 'math'],
     FORBID_ATTR: ['style', 'srcset'],
+    // Docent's own links are allowed alongside the web's. Nothing else is.
+    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|docent:(?:step|tour)\/|#)/i,
   });
 }

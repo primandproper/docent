@@ -1,6 +1,7 @@
 import { api, errorMessage } from './api';
 import type { StepView, TourSummary, TourView, VarView, Workspace } from './api';
 import { NavHistory } from './history';
+import { parseInternal } from './internal';
 import type { Place } from './history';
 import { positionAfterReload } from './steps';
 
@@ -161,6 +162,41 @@ class Session {
       await this.go(positionAfterReload(previous, view.tour?.steps ?? []), false);
     } catch (err) {
       this.error = errorMessage(err);
+    }
+  }
+
+  /** Whether the system map is showing. The reader's choice, kept across tours. */
+  mapShown = $state(true);
+
+  /** Follows one of Docent's own links: to a step of this tour, or into another tour. */
+  async follow(href: string): Promise<void> {
+    const link = parseInternal(href);
+    if (!link) {
+      return;
+    }
+
+    if (link.kind === 'step') {
+      const index = (this.view?.tour?.steps ?? []).findIndex((step) => step.id === link.id);
+      if (index < 0) {
+        this.error = `This tour has no step "${link.id}".`;
+        return;
+      }
+      await this.go(index);
+      return;
+    }
+
+    // A tour is named by the end of its path, so links survive wherever the tours folder lives.
+    const target = this.tours.find((t) => t.path === link.path || t.path.endsWith(`/${link.path}`));
+    if (!target || target.unreadable) {
+      this.error = `There is no tour "${link.path}" in this workspace.`;
+      return;
+    }
+    await this.open(target.path);
+    if (link.id) {
+      const index = (this.view?.tour?.steps ?? []).findIndex((step) => step.id === link.id);
+      if (index > 0) {
+        await this.go(index);
+      }
     }
   }
 

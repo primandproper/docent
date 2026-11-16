@@ -100,9 +100,15 @@ func TestVars_Expand(T *testing.T) {
 	T.Run("only web links are allowed", func(t *testing.T) {
 		t.Parallel()
 
-		for _, bad := range []string{"file:///etc/passwd", "javascript:alert(1)", "vscode://file/x", "/relative", "https://", "{{env}}://x"} {
+		for _, internal := range []string{"docent:step/write-path", "docent:tour/other.tour#start"} {
+			card := vars.Expand(&tour.Link{URL: internal}, defined)
+			test.Eq(t, "", card.Problem, test.Sprint(internal))
+			test.Eq(t, "", card.Host)
+		}
+
+		for _, bad := range []string{"docent:", "docent:step/", "docent:shell/rm", "file:///etc/passwd", "javascript:alert(1)", "vscode://file/x", "/relative", "https://", "{{env}}://x"} {
 			card := vars.Expand(&tour.Link{URL: bad}, defined)
-			test.Eq(t, "Only http and https links can be opened", card.Problem, test.Sprint(bad))
+			test.Eq(t, "Only http, https and docent links can be opened", card.Problem, test.Sprint(bad))
 		}
 
 		test.Eq(t, "", vars.Expand(&tour.Link{URL: "http://localhost:3000/d"}, defined).Problem)

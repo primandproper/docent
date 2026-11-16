@@ -49,6 +49,8 @@
       void session.next();
     } else if (event.key === 'k' || event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
       void session.previous();
+    } else if (event.key === 'm') {
+      session.mapShown = !session.mapShown;
     } else if (event.key === 'o') {
       void session.openInEditor();
     } else if (event.key === 'g') {

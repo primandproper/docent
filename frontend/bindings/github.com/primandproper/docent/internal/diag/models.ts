@@ -114,6 +114,17 @@ export enum Code {
     CodeRepoMissing = "repo-missing",
 
     /**
+     * CodeMapMissing: the tour's `map` file doesn't exist, or isn't a flowchart.
+     */
+    CodeMapMissing = "map-missing",
+
+    /**
+     * CodeMapFocusUnknown: a step's `mapFocus` names something the map doesn't
+     * define. Edges must be named with Mermaid's `id@` syntax to be focused.
+     */
+    CodeMapFocusUnknown = "map-focus-unknown",
+
+    /**
      * CodeBodyMissing: a step's `body` file doesn't exist or can't be read.
      */
     CodeBodyMissing = "body-missing",

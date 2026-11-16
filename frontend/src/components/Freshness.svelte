@@ -20,14 +20,16 @@
   const repos = $derived(session.view?.repos ?? []);
 
   function counts(repo: string): string {
-    const tally = new Map<string, number>();
+    const tally: Record<string, number> = {};
     const steps = session.view?.tour?.steps ?? [];
     (session.view?.steps ?? []).forEach((summary, i) => {
       if (steps[i]?.repo === repo && summary.status !== 'ok') {
-        tally.set(summary.status, (tally.get(summary.status) ?? 0) + 1);
+        tally[summary.status] = (tally[summary.status] ?? 0) + 1;
       }
     });
-    return [...tally].map(([status, n]) => `${n} ${status}`).join(' · ');
+    return Object.entries(tally)
+      .map(([status, n]) => `${n} ${status}`)
+      .join(' · ');
   }
 
   function describe(repo: RepoState): Line | null {

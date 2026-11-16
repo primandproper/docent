@@ -19,10 +19,66 @@ func newValidator(tourJSON string) Validator {
 		gitsrc.Key("/r", "", "a.go"):        []byte("package a\n\nfunc A() {}\n\nfunc B() {}\n"),
 		gitsrc.Key("/r", "", "docs/x.md"):   []byte("x\n"),
 		gitsrc.Key("/r", "", ".tours/keep"): []byte(""),
+
+		gitsrc.Key("/r/.tours", "", "t/map.mmd"):   []byte("flowchart LR\n  api e1@--> queue\n  queue --> worker\n"),
+		gitsrc.Key("/r/.tours", "", "t/notmap.md"): []byte("sequenceDiagram\n  a->>b: hi\n"),
 	}
 	store := &tour.MemoryStore{Root: "/r", Files: map[string][]byte{tourPath: []byte(tourJSON)}}
 
 	return NewValidator(store, walk.NewWalker(&walk.Dependencies{Source: source}), nil, nil)
+}
+
+func TestValidator_Map(T *testing.T) {
+	T.Parallel()
+
+	T.Run("mapFocus may name nodes and named edges, inline or from a file", func(t *testing.T) {
+		t.Parallel()
+
+		for _, m := range []string{`{ "file": "t/map.mmd" }`, `{ "mermaid": "flowchart LR\n  api e1@--> queue --> worker" }`} {
+			diags, err := newValidator(`{"docent": 1, "title": "t", "map": `+m+`, "steps": [
+				{ "id": "a", "description": "d", "mapFocus": ["api", "e1", "worker"] }
+			]}`).Tour(t.Context(), tourPath)
+			must.NoError(t, err)
+			test.Len(t, 0, diags, test.Sprintf("%s: %+v", m, diags))
+		}
+	})
+
+	T.Run("an id the map doesn't define is an error, where it is", func(t *testing.T) {
+		t.Parallel()
+
+		diags, err := newValidator(`{"docent": 1, "title": "t", "map": { "file": "t/map.mmd" }, "steps": [
+			{ "id": "a", "description": "d", "mapFocus": ["api", "cache"] }
+		]}`).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		must.Len(t, 1, diags)
+		test.Eq(t, diag.CodeMapFocusUnknown, diags[0].Code)
+		test.Eq(t, "/steps/0/mapFocus/1", diags[0].Pointer)
+		test.Eq(t, "a", diags[0].Step)
+	})
+
+	T.Run("a map that is missing or not a flowchart is reported once", func(t *testing.T) {
+		t.Parallel()
+
+		for _, file := range []string{"t/gone.mmd", "t/notmap.md", "../../etc/passwd"} {
+			diags, err := newValidator(`{"docent": 1, "title": "t", "map": { "file": "`+file+`" }, "steps": [
+				{ "id": "a", "description": "d", "mapFocus": ["api"] }
+			]}`).Tour(t.Context(), tourPath)
+			must.NoError(t, err)
+			must.Len(t, 1, diags, must.Sprint(file))
+			test.Eq(t, "/map", diags[0].Pointer)
+		}
+	})
+
+	T.Run("mapFocus without a map is an error", func(t *testing.T) {
+		t.Parallel()
+
+		diags, err := newValidator(`{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "d", "mapFocus": ["api"] }
+		]}`).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		must.Len(t, 1, diags)
+		test.StrContains(t, diags[0].Message, "the tour has no `map`")
+	})
 }
 
 func TestValidator_Tour(T *testing.T) {

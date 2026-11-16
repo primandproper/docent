@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, isExternalURL } from '../lib/api';
+  import { parseInternal } from '../lib/internal';
   import { session } from '../lib/session.svelte';
   import { toneOf } from '../lib/status';
   import { stepTitle } from '../lib/steps';
@@ -64,13 +65,13 @@
                 <button
                   class="link-card"
                   disabled={!!link.problem}
-                  onclick={() => api.openExternal(link.url)}
+                  onclick={() => (parseInternal(link.url) ? session.follow(link.url) : api.openExternal(link.url))}
                   title={link.problem || link.url}
                 >
                   <span class="kind">{link.kind}</span>
                   <span class="host">{link.title}</span>
                   {#if link.description}<span class="about">{link.description}</span>{/if}
-                  <span class="url">{link.problem || link.host}</span>
+                  <span class="url">{link.problem || link.host || 'In this workspace'}</span>
                 </button>
               </li>
             {/each}

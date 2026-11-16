@@ -159,6 +159,16 @@ export interface TourView {
     "vars": VarView[] | null;
 
     /**
+     * Map is the tour's system map as Mermaid source, or "".
+     */
+    "map": string;
+
+    /**
+     * MapProblem says why a map the tour names isn't shown.
+     */
+    "mapProblem": string;
+
+    /**
      * Repos is where each of the tour's repos stands on this machine.
      */
     "repos": walk$0.RepoState[] | null;

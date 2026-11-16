@@ -59,6 +59,11 @@ const (
 	CodeRepoUnknown Code = "repo-unknown"
 	// CodeRepoMissing: a repo the tour uses isn't checked out on this machine.
 	CodeRepoMissing Code = "repo-missing"
+	// CodeMapMissing: the tour's `map` file doesn't exist, or isn't a flowchart.
+	CodeMapMissing Code = "map-missing"
+	// CodeMapFocusUnknown: a step's `mapFocus` names something the map doesn't
+	// define. Edges must be named with Mermaid's `id@` syntax to be focused.
+	CodeMapFocusUnknown Code = "map-focus-unknown"
 	// CodeBodyMissing: a step's `body` file doesn't exist or can't be read.
 	CodeBodyMissing Code = "body-missing"
 	// CodeLinkVarUnresolved: a link uses a {{variable}} nothing gives a value for.

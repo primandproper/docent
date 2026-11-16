@@ -380,3 +380,104 @@ test.describe('drift', () => {
     expect(await page.evaluate(() => window.gitActions)).toEqual(['working-tree true']);
   });
 });
+
+test.describe('the system map', () => {
+  async function openDraft(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Reading an item/ }).click();
+    await expect(page.getByRole('region', { name: 'System map' }).locator('svg')).toBeVisible();
+  }
+
+  function node(page: Page, id: string) {
+    return page.locator(`.map g.node[id*="-flowchart-${id}-"]`);
+  }
+
+  test('highlights where the current step sits and dims where the reader has been', async ({ page }) => {
+    await openDraft(page);
+
+    await expect(node(page, 'api')).toHaveClass(/current/);
+    await expect(node(page, 'store')).toHaveClass(/current/);
+    await expect(page.locator('.map path[data-id="e1"]')).toHaveClass(/current/);
+    await expect(node(page, 'worker')).toHaveClass(/upcoming/);
+    await expect(node(page, 'client')).not.toHaveClass(/current|visited|upcoming/);
+
+    await page.keyboard.press('j');
+    await expect(node(page, 'worker')).toHaveClass(/current/);
+    await expect(page.locator('.map path[data-id="e3"]')).toHaveClass(/current/);
+    await expect(node(page, 'api')).toHaveClass(/visited/);
+    await expect(node(page, 'api')).not.toHaveClass(/current/);
+  });
+
+  test('clicking a node jumps to the first step that focuses it', async ({ page }) => {
+    await openDraft(page);
+
+    await node(page, 'billing').click();
+    await expect(currentStep(page)).toContainText('Where reads are metered');
+
+    await node(page, 'worker').click();
+    await expect(currentStep(page)).toContainText('Retries in the worker');
+  });
+
+  test('m hides and shows it', async ({ page }) => {
+    await openDraft(page);
+
+    await page.keyboard.press('m');
+    await expect(page.getByRole('region', { name: 'System map' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Map' })).toHaveAttribute('aria-pressed', 'false');
+
+    await page.keyboard.press('m');
+    await expect(page.getByRole('region', { name: 'System map' }).locator('svg')).toBeVisible();
+  });
+
+  test('a tour without a map has no map panel or button', async ({ page }) => {
+    await openMain(page);
+
+    await expect(page.getByRole('region', { name: 'System map' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Map' })).toHaveCount(0);
+  });
+});
+
+test.describe('links within the app', () => {
+  async function openWrapUp(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Reading an item/ }).click();
+    await page.locator('.step').nth(3).click();
+    await expect(page.locator('.narrative')).toContainText('Short tour, short path.');
+  }
+
+  test('a docent:step link jumps to that step', async ({ page }) => {
+    await openWrapUp(page);
+
+    await page.getByRole('link', { name: 'back to the handler' }).click();
+    await expect(currentStep(page)).toContainText('The read handler');
+    await expect(page).toHaveURL('/');
+  });
+
+  test('a docent:tour link opens the other tour at a step', async ({ page }) => {
+    await openWrapUp(page);
+
+    await page.getByRole('link', { name: 'the write path' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: MAIN })).toBeVisible();
+    // That tour is plain CodeTour and has no step ids, so it opens at the start.
+    await expect(currentStep(page)).toContainText('Why this is worth a tour');
+  });
+
+  test('a link card can point inside the app too', async ({ page }) => {
+    await openWrapUp(page);
+
+    await page.locator('.links .link-card').click();
+    await expect(currentStep(page)).toContainText('The read handler');
+    expect(await page.evaluate(() => window.openedURLs)).toEqual([]);
+  });
+
+  test('a mermaid fence is drawn, and its docent click directive works', async ({ page }) => {
+    await openWrapUp(page);
+
+    const figure = page.locator('.narrative figure.diagram');
+    await expect(figure.locator('svg')).toBeVisible();
+    await expect(figure).toContainText('Cache miss');
+
+    await figure.locator('g.node[id*="-flowchart-miss-"]').click();
+    await expect(currentStep(page)).toContainText('The read handler');
+  });
+});

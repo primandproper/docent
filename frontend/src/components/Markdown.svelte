@@ -1,13 +1,60 @@
 <script lang="ts">
   import { api, isExternalURL } from '../lib/api';
+  import { onSchemeChange, renderDiagram } from '../lib/diagram';
+  import { parseInternal } from '../lib/internal';
   import { renderMarkdown } from '../lib/markdown';
+  import { session } from '../lib/session.svelte';
 
   let { source }: { source: string } = $props();
 
   const html = $derived(renderMarkdown(source));
 
-  // Links never navigate the webview. Web links open in the system browser;
-  // anything else a tour links to (CodeTour's command: links, file paths) does nothing.
+  let host: HTMLDivElement | undefined = $state();
+  let scheme = $state(0);
+
+  $effect(() => onSchemeChange(() => scheme++));
+
+  // Fenced ```mermaid blocks are drawn in place once the text is on the page.
+  $effect(() => {
+    void html;
+    void scheme;
+    if (!host) {
+      return;
+    }
+    let stale = false;
+
+    for (const code of host.querySelectorAll('pre > code.language-mermaid')) {
+      const pre = code.parentElement;
+      renderDiagram(code.textContent ?? '')
+        .then((rendered) => {
+          if (stale || !pre?.isConnected) {
+            return;
+          }
+          const figure = document.createElement('figure');
+          figure.className = 'diagram';
+          figure.innerHTML = rendered.svg;
+          // A `click` directive aimed at a docent: link becomes a jump.
+          for (const click of rendered.clicks) {
+            const node = figure.querySelector(`[id^="${rendered.id}-flowchart-${CSS.escape(click.node)}-"]`);
+            node?.classList.add('jumps');
+            node?.addEventListener('click', () => void session.follow(click.href));
+          }
+          pre.replaceWith(figure);
+        })
+        .catch(() => {
+          // A diagram that doesn't parse stays as the text the author wrote.
+          pre?.classList.add('broken-diagram');
+        });
+    }
+
+    return () => {
+      stale = true;
+    };
+  });
+
+  // Links never navigate the webview. Web links open in the system browser,
+  // docent: links move within the app, and anything else a tour links to
+  // (CodeTour's command: links, file paths) does nothing.
   function onclick(event: MouseEvent): void {
     const link = (event.target as Element | null)?.closest('a');
     if (!link) {
@@ -15,16 +62,18 @@
     }
     event.preventDefault();
     const href = link.getAttribute('href') ?? '';
-    if (isExternalURL(href)) {
+    if (parseInternal(href)) {
+      void session.follow(href);
+    } else if (isExternalURL(href)) {
       void api.openExternal(href);
     }
   }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="markdown selectable" {onclick}>
+<div class="markdown selectable" bind:this={host} {onclick}>
   <!-- eslint-disable-next-line svelte/no-at-html-tags -- renderMarkdown sanitizes with DOMPurify -->
-  {@html html}
+  {#key scheme}{@html html}{/key}
 </div>
 
 <style>
@@ -125,6 +174,22 @@
     border: 1px solid var(--border);
     padding: 4px 9px;
     text-align: left;
+  }
+
+  .markdown :global(figure.diagram) {
+    margin: 0 0 0.9em;
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+  }
+
+  .markdown :global(figure.diagram svg) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .markdown :global(.jumps) {
+    cursor: pointer;
   }
 
   .markdown :global(hr) {

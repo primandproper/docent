@@ -11,10 +11,12 @@
   "vars": {
     "env": { "choices": ["staging", "prod"], "default": "staging", "description": "Which environment the links point at" }
   },
+  "map": { "file": "reading-an-item/map.mmd" },
   "generatedBy": { "agent": "claude-code", "at": "2026-11-16T10:00:00Z" },
   "steps": [
     {
       "id": "get-item",
+      "mapFocus": ["api", "e1", "store"],
       "title": "The read handler",
       "repo": "api",
       "file": "internal/http/items.go",
@@ -29,6 +31,7 @@
     },
     {
       "id": "retries",
+      "mapFocus": ["worker", "e3", "cache"],
       "title": "Retries in the worker",
       "repo": "worker",
       "file": "src/purge.ts",
@@ -38,6 +41,7 @@
     },
     {
       "id": "charges",
+      "mapFocus": ["billing"],
       "title": "Where reads are metered",
       "repo": "billing",
       "file": "meter.go",
@@ -47,10 +51,12 @@
     {
       "id": "wrap-up",
       "title": "That's the whole read path",
-      "description": "Short tour, short path."
+      "description": "Short tour, short path.\n\nGo [back to the handler](docent:step/get-item), or on to [the write path](docent:tour/cache-invalidation.tour#Dashboards).\n\n```mermaid\nflowchart LR\n  hit[Cache hit] --> done([Done])\n  miss[Cache miss] --> read[Read the store] --> done\n  click miss \"docent:step/get-item\"\n```",
+      "links": [{ "kind": "doc", "title": "Start again", "url": "docent:step/get-item" }]
     },
     {
       "id": "purge-loop",
+      "mapFocus": ["worker"],
       "title": "The retry loop",
       "repo": "worker",
       "file": "src/purge.ts",
@@ -61,6 +67,7 @@
     },
     {
       "id": "sleep-helper",
+      "mapFocus": ["worker"],
       "title": "A hand-rolled sleep",
       "repo": "worker",
       "file": "src/purge.ts",
