@@ -51,10 +51,14 @@
       void session.previous();
     } else if (event.key === 'm') {
       session.mapShown = !session.mapShown;
+    } else if (event.key === 'O') {
+      session.editorMenu = !session.editorMenu;
     } else if (event.key === 'o') {
       void session.openInEditor();
     } else if (event.key === 'g') {
       goingTo = true;
+    } else if (event.key === 'Escape' && session.editorMenu) {
+      session.editorMenu = false;
     } else if (event.key === 'Escape') {
       void session.close();
     } else {

@@ -23,6 +23,10 @@
       "pattern": "^func \\(h \\*Handler\\) GetItem",
       "line": 15,
       "description": "Reads go straight to the store on a cache miss.",
+      "anchors": [
+        { "label": "writer", "repo": "api", "file": "internal/http/items.go", "pattern": "^func \\(h \\*Handler\\) UpdateItem", "line": 26 },
+        { "label": "purge", "repo": "worker", "file": "src/purge.ts", "pattern": "^export async function purge", "line": 7 }
+      ],
       "body": "reading-an-item/01-get-item.md",
       "links": [
         { "kind": "grafana", "title": "Read latency p99", "url": "{{grafana}}/d/abc123/items?var-env={{env}}", "description": "Watch this while the cache warms." },

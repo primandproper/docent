@@ -21,6 +21,32 @@ import * as tour$0 from "../tour/models.js";
 import * as walk$0 from "../walk/models.js";
 
 /**
+ * AnchorView is one of a step's extra anchors, ready to show as a tab.
+ */
+export interface AnchorView {
+    "ref": walk$0.Ref | null;
+    "then": anchor$0.Then | null;
+    "removed": gitsrc$0.Commit | null;
+    "label": string;
+    "repo": string;
+    "path": string;
+    "content": string;
+    "unavailable": string;
+    "permalink": string;
+    "cloneCommand": string;
+    "location": anchor$0.Location;
+}
+
+/**
+ * FileView is a file opened from the file-tree drawer.
+ */
+export interface FileView {
+    "path": string;
+    "content": string;
+    "unavailable": string;
+}
+
+/**
  * StepSummary is what the step rail needs to know about a step.
  */
 export interface StepSummary {
@@ -100,6 +126,11 @@ export interface StepView {
     "cloneCommand": string;
     "entries": gitsrc$0.Entry[] | null;
     "links": links$0.Card[] | null;
+
+    /**
+     * Anchors are the step's extra code references, shown as tabs.
+     */
+    "anchors": AnchorView[] | null;
     "location": anchor$0.Location;
     "index": number;
 }

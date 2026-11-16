@@ -291,3 +291,31 @@ func TestRepoName(T *testing.T) {
 		test.Eq(t, "", RepoName(""))
 	})
 }
+
+func TestConfig_EditorFor(T *testing.T) {
+	T.Parallel()
+
+	cfg := &Config{
+		Workspace: File{Editors: Editors{Rules: []EditorRule{
+			{Repo: "infra", Use: "zed"},
+			{Match: "**/*.go", Repo: "api", Use: "goland"},
+		}}},
+		User: File{Editors: Editors{Rules: []EditorRule{
+			{Match: "**/*.{java,kt}", Use: "idea"},
+			{Match: "**/*.go", Use: "code"},
+			{Match: "[", Use: "broken"},
+			{Use: "matches-nothing"},
+		}}},
+	}
+
+	T.Run("the first matching rule wins, workspace rules first", func(t *testing.T) {
+		t.Parallel()
+
+		test.Eq(t, "zed", cfg.EditorFor("infra", "modules/vpc/main.tf"))
+		test.Eq(t, "goland", cfg.EditorFor("api", "internal/http/items.go"))
+		test.Eq(t, "code", cfg.EditorFor("worker", "cmd/main.go"))
+		test.Eq(t, "idea", cfg.EditorFor("", "src/main/java/App.java"))
+		test.Eq(t, "idea", cfg.EditorFor("", "App.kt"))
+		test.Eq(t, "", cfg.EditorFor("worker", "src/purge.ts"))
+	})
+}

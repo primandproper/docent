@@ -89,3 +89,24 @@ func Write(path string, raw *orderedjson.Value) error {
 
 	return nil
 }
+
+// SetAnchorHash records the contentHash of one of a step's extra anchors, or
+// removes it when hash is empty.
+func SetAnchorHash(raw *orderedjson.Value, step, anchor int, hash string) {
+	steps := raw.Get("steps")
+	if steps == nil || steps.Kind != orderedjson.KindArray || step >= len(steps.Elems) {
+		return
+	}
+
+	anchors := steps.Elems[step].Get("anchors")
+	if anchors == nil || anchors.Kind != orderedjson.KindArray || anchor >= len(anchors.Elems) {
+		return
+	}
+
+	if hash == "" {
+		anchors.Elems[anchor].Delete("contentHash")
+		return
+	}
+
+	anchors.Elems[anchor].Set("contentHash", orderedjson.String(hash))
+}

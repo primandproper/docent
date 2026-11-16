@@ -242,6 +242,12 @@ func (a *application) stamp(ctx context.Context, arg string, hashes, force bool,
 		if status := statusOf(steps[i]); status != anchor.StatusOK {
 			drifted = append(drifted, fmt.Sprintf("  %-10s %s", status, t.StepLabel(i)))
 		}
+
+		for j := range steps[i].Extras {
+			if status := statusOf(steps[i].Extras[j].Code); status != anchor.StatusOK {
+				drifted = append(drifted, fmt.Sprintf("  %-10s %s, anchor %q", status, t.StepLabel(i), steps[i].Extras[j].Label))
+			}
+		}
 	}
 
 	if len(drifted) > 0 && !force {
@@ -283,6 +289,15 @@ func (a *application) stamp(ctx context.Context, arg string, hashes, force bool,
 		}
 
 		tour.SetHash(t.Raw, i, hash)
+
+		for j := range steps[i].Extras {
+			extraHash := ""
+			if res := steps[i].Extras[j].Code.Anchor; hashes && res != nil && res.Content != nil {
+				extraHash = anchor.Hash(anchor.SplitLines(res.Content), res.Location.Range)
+			}
+
+			tour.SetAnchorHash(t.Raw, i, j, extraHash)
+		}
 	}
 
 	if review != nil {

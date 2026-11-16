@@ -23,7 +23,10 @@ export const backend: Api = {
   clone: (path, repo) => Service.Clone(path, repo),
   expandLinks: async (path, body) => (await Service.ExpandLinks(path, body)) ?? [],
   editors: async () => (await Service.Editors()) ?? [],
-  openInEditor: async (path, index, editorID) => required(await Service.OpenInEditor(path, index, editorID), 'result'),
+  openInEditor: async (path, index, extra, editorID) =>
+    required(await Service.OpenInEditor(path, index, extra, editorID), 'result'),
+  browse: async (path, index, extra, dir) => (await Service.Browse(path, index, extra, dir)) ?? [],
+  browseFile: async (path, index, extra, file) => required(await Service.BrowseFile(path, index, extra, file), 'file'),
   copy: (text) => Clipboard.SetText(text),
   // Must match app.ChangedEvent in Go.
   onChanged: (callback) => Events.On('docent:changed' as never, callback),

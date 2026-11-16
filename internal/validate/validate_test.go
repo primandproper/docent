@@ -221,3 +221,33 @@ func TestValidator_Embeds(T *testing.T) {
 		test.Eq(t, []string{`/steps/0/description links to step "nowhere", which this tour doesn't have`}, find(diags, diag.CodeStepLinkUnknown))
 	})
 }
+
+func TestValidator_ExtraAnchors(T *testing.T) {
+	T.Parallel()
+
+	T.Run("extra anchors are checked like the step's own, and pointed at inside `anchors`", func(t *testing.T) {
+		t.Parallel()
+
+		diags, err := newValidator(`{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "d", "file": "a.go", "line": 3, "anchors": [
+				{ "label": "fine", "file": "a.go", "pattern": "^func B", "line": 5 },
+				{ "label": "test", "file": "a_test.go", "line": 1 },
+				{ "label": "drifted", "file": "a.go", "pattern": "^func B", "line": 3 },
+				{ "label": "elsewhere", "repo": "nope", "file": "x.go" }
+			] }
+		]}`).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+
+		got := make([]string, len(diags))
+		for i, d := range diags {
+			got[i] = string(d.Code) + " " + d.Pointer + " " + string(d.Severity) + " " + d.Step
+		}
+
+		test.Eq(t, []string{
+			"file-missing /steps/0/anchors/1/file error a",
+			"anchor-moved /steps/0/anchors/2/line warning a",
+			"repo-unknown /steps/0/anchors/3/repo error a",
+		}, got)
+		test.StrContains(t, diags[0].Message, `anchor "test": `)
+	})
+}

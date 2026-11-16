@@ -1,6 +1,7 @@
 // The frontend's view of Go. Everything else imports from here; the calls
 // themselves live in ./backend, which browser tests swap for a recorded one.
 import type {
+  FileView,
   StepView,
   TourSummary,
   TourView,
@@ -8,10 +9,13 @@ import type {
   Workspace,
 } from '../../bindings/github.com/primandproper/docent/internal/app';
 import type { Editor, Result as EditorResult } from '../../bindings/github.com/primandproper/docent/internal/editor';
+import type { Entry } from '../../bindings/github.com/primandproper/docent/internal/gitsrc';
 import type { Card } from '../../bindings/github.com/primandproper/docent/internal/links';
 import { backend } from './backend';
 
 export type {
+  AnchorView,
+  FileView,
   StepSummary,
   StepView,
   TourSummary,
@@ -43,8 +47,14 @@ export interface Api {
   /** Turns the body of a docent-links fence into cards, with variables filled in. */
   expandLinks(path: string, body: string): Promise<Card[]>;
   editors(): Promise<Editor[]>;
-  /** Opens a file step in an editor: the one with this id, or the reader's default when empty. */
-  openInEditor(path: string, index: number, editorID: string): Promise<EditorResult>;
+  /**
+   * Opens a file step in an editor: the one with this id, or the reader's
+   * choice for the file when empty. `extra` is an extra anchor's index, or -1.
+   */
+  openInEditor(path: string, index: number, extra: number, editorID: string): Promise<EditorResult>;
+  /** Lists a directory of the repo a step's code is in. `extra` is an extra anchor's index, or -1. */
+  browse(path: string, index: number, extra: number, dir: string): Promise<Entry[]>;
+  browseFile(path: string, index: number, extra: number, file: string): Promise<FileView>;
   /** Opens an http(s) URL in the system browser. Anything else is refused. */
   openExternal(url: string): Promise<void>;
   copy(text: string): Promise<void>;

@@ -33,6 +33,8 @@ const (
 	o11yName = "app_service"
 	// tourKey is the log key for the tour a call is about.
 	tourKey = "tour"
+	// stepKey is the log key for the step a call is about.
+	stepKey = "step"
 
 	// maxFileSize is the largest file the code pane is sent. Past it the step
 	// says so instead of shipping the bytes to the webview.
@@ -155,11 +157,37 @@ type (
 		Permalink string `json:"permalink"`
 		// CloneCommand fetches the step's repo when it isn't checked out,
 		// quoted for pasting into a shell.
+		CloneCommand string         `json:"cloneCommand"`
+		Entries      []gitsrc.Entry `json:"entries"`
+		Links        []links.Card   `json:"links"`
+		// Anchors are the step's extra code references, shown as tabs.
+		Anchors  []AnchorView    `json:"anchors"`
+		Location anchor.Location `json:"location"`
+		Index    int             `json:"index"`
+	}
+
+	// AnchorView is one of a step's extra anchors, ready to show as a tab.
+	AnchorView struct {
+		_            struct{}        `json:"-"`
+		Ref          *walk.Ref       `json:"ref"`
+		Then         *anchor.Then    `json:"then"`
+		Removed      *gitsrc.Commit  `json:"removed"`
+		Label        string          `json:"label"`
+		Repo         string          `json:"repo"`
+		Path         string          `json:"path"`
+		Content      string          `json:"content"`
+		Unavailable  string          `json:"unavailable"`
+		Permalink    string          `json:"permalink"`
 		CloneCommand string          `json:"cloneCommand"`
-		Entries      []gitsrc.Entry  `json:"entries"`
-		Links        []links.Card    `json:"links"`
 		Location     anchor.Location `json:"location"`
-		Index        int             `json:"index"`
+	}
+
+	// FileView is a file opened from the file-tree drawer.
+	FileView struct {
+		_           struct{} `json:"-"`
+		Path        string   `json:"path"`
+		Content     string   `json:"content"`
+		Unavailable string   `json:"unavailable"`
 	}
 
 	// Service is the API the frontend calls.
@@ -370,7 +398,7 @@ func (s *Service) Step(ctx context.Context, path string, index int) (*StepView, 
 	ctx, span := s.tracer.StartSpan(ctx)
 	defer span.End()
 
-	logger := s.logger.WithValues(map[string]any{tourKey: path, "step": index})
+	logger := s.logger.WithValues(map[string]any{tourKey: path, stepKey: index})
 
 	s.mu.Lock()
 	t, ok := s.open[path]
@@ -418,19 +446,44 @@ func (s *Service) Step(ctx context.Context, path string, index int) (*StepView, 
 		view.Location = step.Anchor.Location
 		view.Then = step.Anchor.Then
 		view.Removed = step.Anchor.Removed
+		view.Content, view.Unavailable = showable(step.Anchor.Content)
+	}
 
-		switch content := step.Anchor.Content; {
-		case content == nil:
-		case len(content) > maxFileSize:
-			view.Unavailable = fmt.Sprintf("This file is %d MB, too large to show.", len(content)>>20)
-		case bytes.IndexByte(content, 0) >= 0 || !utf8.Valid(content):
-			view.Unavailable = "This is a binary file."
-		default:
-			view.Content = string(content)
+	view.Anchors = make([]AnchorView, 0, len(step.Extras))
+
+	for i := range step.Extras {
+		code := step.Extras[i].Code
+		extra := AnchorView{
+			Label:        step.Extras[i].Label,
+			Repo:         code.Repo,
+			Path:         code.Path,
+			Ref:          code.Ref,
+			Location:     code.Anchor.Location,
+			Then:         code.Anchor.Then,
+			Removed:      code.Anchor.Removed,
+			Permalink:    s.permalink(ctx, t, code),
+			CloneCommand: shellJoin(code.CloneCommand),
 		}
+		extra.Content, extra.Unavailable = showable(code.Anchor.Content)
+		view.Anchors = append(view.Anchors, extra)
 	}
 
 	return view, nil
+}
+
+// showable turns a file's bytes into text for the code pane, or says why
+// they can't be shown.
+func showable(content []byte) (text, unavailable string) {
+	switch {
+	case content == nil:
+		return "", ""
+	case len(content) > maxFileSize:
+		return "", fmt.Sprintf("This file is %d MB, too large to show.", len(content)>>20)
+	case bytes.IndexByte(content, 0) >= 0 || !utf8.Valid(content):
+		return "", "This is a binary file."
+	default:
+		return string(content), ""
+	}
 }
 
 // checkKnown confirms path is a tour this workspace discovered, looking again
@@ -544,13 +597,14 @@ func (s *Service) Editors(ctx context.Context) []editor.Editor {
 }
 
 // OpenInEditor opens a file step of an open tour in an editor, at the line its
-// anchor resolved to. editorID picks one from Editors; empty means the
-// reader's default. The frontend names a step, never a path.
-func (s *Service) OpenInEditor(ctx context.Context, path string, index int, editorID string) (*editor.Result, error) {
+// anchor resolved to. extra picks one of the step's extra anchors, or -1 for
+// its own file. editorID picks one from Editors; empty means whatever the
+// reader's rules and default say. The frontend names a step, never a path.
+func (s *Service) OpenInEditor(ctx context.Context, path string, index, extra int, editorID string) (*editor.Result, error) {
 	ctx, span := s.tracer.StartSpan(ctx)
 	defer span.End()
 
-	logger := s.logger.WithValues(map[string]any{tourKey: path, "step": index})
+	logger := s.logger.WithValues(map[string]any{tourKey: path, stepKey: index})
 
 	s.mu.Lock()
 	t, ok := s.open[path]
@@ -565,6 +619,15 @@ func (s *Service) OpenInEditor(ctx context.Context, path string, index int, edit
 		return nil, observability.PrepareAndLogError(err, logger, span, "resolving step")
 	}
 
+	// extra picks one of the step's extra anchors; -1 means the step's own file.
+	if extra >= 0 {
+		if extra >= len(step.Extras) {
+			return nil, observability.PrepareAndLogError(ErrNotAFile, logger, span, "opening in editor")
+		}
+
+		step = step.Extras[extra].Code
+	}
+
 	if step.Kind != walk.KindFile || step.Anchor == nil || step.Anchor.Content == nil {
 		return nil, observability.PrepareAndLogError(ErrNotAFile, logger, span, "opening in editor")
 	}
@@ -576,7 +639,9 @@ func (s *Service) OpenInEditor(ctx context.Context, path string, index int, edit
 
 	location := step.Anchor.Location.Range
 
-	result, err := s.launcher.Open(ctx, &editor.Target{Path: abs, Line: location.StartLine, Col: location.StartCol}, editorID)
+	result, err := s.launcher.Open(ctx, &editor.Target{
+		Path: abs, Line: location.StartLine, Col: location.StartCol, Repo: step.Repo, RelPath: step.Path,
+	}, editorID)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "opening in editor")
 	}
@@ -792,4 +857,85 @@ func (s *Service) ExpandLinks(ctx context.Context, path, body string) ([]links.C
 	}
 
 	return cards, nil
+}
+
+// browseRoot finds where a step's code (or one of its extra anchors') is read
+// from, for the file-tree drawer.
+func (s *Service) browseRoot(ctx context.Context, path string, index, extra int) (*walk.Step, error) {
+	s.mu.Lock()
+	t, ok := s.open[path]
+	s.mu.Unlock()
+
+	if !ok {
+		return nil, fmt.Errorf("%q is not open: %w", path, ErrUnknownTour)
+	}
+
+	step, err := s.core.Walker.Step(ctx, t, index)
+	if err != nil {
+		return nil, err
+	}
+
+	if extra >= 0 {
+		if extra >= len(step.Extras) {
+			return nil, ErrNotAFile
+		}
+
+		step = step.Extras[extra].Code
+	}
+
+	// A step whose repo or ref is missing has nothing to browse.
+	if step.Ref == nil || (step.Kind != walk.KindFile && step.Kind != walk.KindDirectory) {
+		return nil, ErrNotAFile
+	}
+
+	return step, nil
+}
+
+// Browse lists a directory of the repo a step's code is in, at the ref the
+// step is read at. dir is relative to that repo's root; "" is the root.
+func (s *Service) Browse(ctx context.Context, path string, index, extra int, dir string) ([]gitsrc.Entry, error) {
+	ctx, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	logger := s.logger.WithValues(map[string]any{tourKey: path, stepKey: index, "dir": dir})
+
+	step, err := s.browseRoot(ctx, path, index, extra)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, logger, span, "browsing")
+	}
+
+	entries, err := s.core.Source.ReadDir(ctx, step.Root, step.Ref.Commit, dir)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, logger, span, "listing directory")
+	}
+
+	if entries == nil {
+		entries = []gitsrc.Entry{}
+	}
+
+	return entries, nil
+}
+
+// BrowseFile reads a file of the repo a step's code is in, at the ref the
+// step is read at.
+func (s *Service) BrowseFile(ctx context.Context, path string, index, extra int, file string) (*FileView, error) {
+	ctx, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	logger := s.logger.WithValues(map[string]any{tourKey: path, stepKey: index, "file": file})
+
+	step, err := s.browseRoot(ctx, path, index, extra)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, logger, span, "browsing")
+	}
+
+	content, err := s.core.Source.ReadFile(ctx, step.Root, step.Ref.Commit, file)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, logger, span, "reading file")
+	}
+
+	view := &FileView{Path: file}
+	view.Content, view.Unavailable = showable(content)
+
+	return view, nil
 }

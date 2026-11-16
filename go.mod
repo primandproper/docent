@@ -3,6 +3,7 @@ module github.com/primandproper/docent
 go 1.27
 
 require (
+	github.com/bmatcuk/doublestar/v4 v4.10.4
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/primandproper/primitives-go/v2 v2.18.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

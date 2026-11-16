@@ -106,6 +106,32 @@ func TestLauncher_Open(T *testing.T) {
 		test.Eq(t, [][]string{{"/bin/zed", "/w/my repo/a b.go:12:3"}}, system.ran)
 	})
 
+	T.Run("a rule picks the editor per file, ahead of the default", func(t *testing.T) {
+		t.Parallel()
+
+		system := &fakeSystem{commands: []string{"code", "zed", "goland"}}
+		cfg := config("code", nil)
+		cfg.User.Editors.Rules = []workspace.EditorRule{{Match: "**/*.go", Use: "goland"}, {Repo: "infra", Use: "zed"}}
+		l := NewLauncherOn(system, cfg, nil, nil)
+
+		result, err := l.Open(t.Context(), &Target{Path: "/w/api/a.go", RelPath: "a.go", Repo: "api", Line: 3}, "")
+		must.NoError(t, err)
+		test.Eq(t, "goland", result.Editor.ID)
+
+		result, err = l.Open(t.Context(), &Target{Path: "/w/infra/main.tf", RelPath: "main.tf", Repo: "infra"}, "")
+		must.NoError(t, err)
+		test.Eq(t, "zed", result.Editor.ID)
+
+		result, err = l.Open(t.Context(), &Target{Path: "/w/web/a.ts", RelPath: "a.ts", Repo: "web"}, "")
+		must.NoError(t, err)
+		test.Eq(t, "code", result.Editor.ID)
+
+		// An explicit choice still wins over a rule.
+		result, err = l.Open(t.Context(), &Target{Path: "/w/api/a.go", RelPath: "a.go", Repo: "api"}, "zed")
+		must.NoError(t, err)
+		test.Eq(t, "zed", result.Editor.ID)
+	})
+
 	T.Run("a custom editor's template is filled without splitting arguments", func(t *testing.T) {
 		t.Parallel()
 

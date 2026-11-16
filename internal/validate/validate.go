@@ -79,6 +79,12 @@ func (v *validator) Tour(ctx context.Context, path string) ([]diag.Diagnostic, e
 			diags = append(diags, d)
 		}
 
+		for j := range step.Extras {
+			if d, found := extraDiagnostic(t, i, j, step.Extras[j].Code); found {
+				diags = append(diags, d)
+			}
+		}
+
 		diags = append(diags, narrativeDiagnostics(t, i, step)...)
 		diags = append(diags, embedDiagnostics(t, i, step)...)
 	}
@@ -374,6 +380,31 @@ func FencedLinks(body string) ([]tour.Link, error) {
 	}
 
 	return out, nil
+}
+
+// extraDiagnostic reports what's wrong with one of a step's extra anchors,
+// pointing inside `anchors` instead of at the step's own fields.
+func extraDiagnostic(t *tour.Tour, index, extra int, code *walk.Step) (diag.Diagnostic, bool) {
+	a := &t.Steps[index].Anchors[extra]
+	pseudo := tour.Tour{Path: t.Path, Steps: []tour.Step{{ID: t.Steps[index].ID, Repo: a.Repo, File: a.File, Selection: a.Selection}}}
+
+	d, found := stepDiagnostic(&pseudo, 0, code)
+	if !found {
+		return d, false
+	}
+
+	d.Step = t.StepLabel(index)
+	d.Message = fmt.Sprintf("anchor %q: %s", a.Label, d.Message)
+
+	// stepDiagnostic pointed at /steps/0/<field>; the field lives under the anchor.
+	field := strings.TrimPrefix(d.Pointer, "/steps/0")
+	if strings.HasPrefix(d.Pointer, "/repos/") {
+		return d, true
+	}
+
+	d.Pointer = diag.Pointer("steps", index, "anchors", extra) + field
+
+	return d, true
 }
 
 func anchorPointerAndHint(index int, s *tour.Step, loc *anchor.Location) (pointer, hint string) {

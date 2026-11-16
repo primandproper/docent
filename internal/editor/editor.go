@@ -56,8 +56,12 @@ type (
 	Target struct {
 		_    struct{}
 		Path string
-		Line int
-		Col  int
+		// Repo and RelPath say which tour repo the file is in and where,
+		// which is what editor rules match on. Both may be empty.
+		Repo    string
+		RelPath string
+		Line    int
+		Col     int
 	}
 
 	// Result says what Open actually did.
@@ -75,10 +79,10 @@ type (
 	Launcher interface {
 		// Detect lists the editors installed right now, best guess first.
 		Detect(ctx context.Context) []Editor
-		// Open opens the target in the editor with the given id, or in the
-		// configured default when id is empty, falling back when that editor
-		// is gone: the next detected editor, then the default app for the
-		// file, then Finder.
+		// Open opens the target in the editor with the given id. With an
+		// empty id it uses the first rule that matches the file, else the
+		// configured default. When that editor is gone it falls back: the
+		// next detected editor, then the default app for the file, then Finder.
 		Open(ctx context.Context, target *Target, id string) (*Result, error)
 	}
 
@@ -218,7 +222,13 @@ func (l *launcher) Open(ctx context.Context, target *Target, id string) (*Result
 
 	logger := l.logger.WithValues(map[string]any{"path": target.Path, "line": target.Line})
 
+	// An explicit choice wins, then the reader's rules for this file, then
+	// their default.
 	wanted := id
+	if wanted == "" {
+		wanted = l.config.EditorFor(target.Repo, target.RelPath)
+	}
+
 	if wanted == "" {
 		wanted = l.config.DefaultEditor()
 	}

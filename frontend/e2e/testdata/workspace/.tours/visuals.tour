@@ -37,9 +37,17 @@
     },
     {
       "id": "timeline",
+      "layout": "narrative",
       "title": "A timeline",
       "description": "d",
       "body": "visuals/04-timeline.md"
+    },
+    {
+      "id": "code-only",
+      "title": "Only the code",
+      "description": "This narrative is hidden by the step's layout.",
+      "layout": "code",
+      "anchors": [{ "label": "handler", "file": "api/internal/http/items.go", "line": 9 }]
     }
   ]
 }

@@ -1,8 +1,6 @@
 <script lang="ts">
   import { session } from '../lib/session.svelte';
-  import { statusLabel, toneOf } from '../lib/status';
-  import CodePane from './CodePane.svelte';
-  import DirectoryPane from './DirectoryPane.svelte';
+  import CodeArea from './CodeArea.svelte';
   import Freshness from './Freshness.svelte';
   import Narrative from './Narrative.svelte';
   import StepRail from './StepRail.svelte';
@@ -10,19 +8,16 @@
 
   const tour = $derived(session.view?.tour);
   const diagnostics = $derived(session.view?.diagnostics ?? []);
-  // The step view lags the index by one round trip; only show it once it matches.
-  const step = $derived(session.step?.index === session.index ? session.step : null);
   const kind = $derived(session.view?.steps?.[session.index]?.kind ?? 'content');
-  const hasPane = $derived(kind === 'file' || kind === 'directory');
+  const layout = $derived(tour?.steps?.[session.index]?.layout ?? '');
+  const hasAnchors = $derived((tour?.steps?.[session.index]?.anchors ?? []).length > 0);
+  // A step's `layout` can override what its content would get: `narrative`
+  // hides the code, `code` hides the narrative.
+  const hasPane = $derived(layout !== 'narrative' && (kind === 'file' || kind === 'directory' || hasAnchors));
+  const onlyCode = $derived(layout === 'code' && hasPane);
   const unreviewed = $derived(!!tour?.generatedBy && (tour.reviewedBy ?? []).length === 0);
 
   let showProblems = $state(false);
-  /** Whether the code as it was is shown beside the code as it is. */
-  let comparing = $state(false);
-
-  const then = $derived(step?.then ?? null);
-  const thenText = $derived((then?.lines ?? []).join('\n'));
-  const stamp = $derived(session.view?.repos?.find((r) => r.name === step?.repo)?.stamp.slice(0, 7) ?? 'the stamp');
 </script>
 
 <div class="walk">
@@ -98,96 +93,14 @@
 
   <Freshness />
 
-  <div class="panes" class:no-pane={!hasPane}>
+  <div class="panes" class:no-pane={!hasPane} class:only-code={onlyCode}>
     <StepRail />
 
     {#if hasPane}
-      <section class="pane">
-        <div class="crumbs">
-          <span class="trail">
-            <span class="crumb root">{step?.repo || session.workspace?.name}</span>
-            {#each (step?.path ?? '').split('/').filter(Boolean) as part, i (i)}
-              <span class="sep">›</span> <span class="crumb">{part}</span>
-            {/each}
-          </span>
-          {#if step && step.location.range.startLine > 0}
-            <span class="sep">›</span>
-            <span class="crumb line">
-              {step.location.range.startLine === step.location.range.endLine
-                ? `line ${step.location.range.startLine}`
-                : `lines ${step.location.range.startLine}–${step.location.range.endLine}`}
-            </span>
-          {/if}
-          {#if step?.ref?.commit}
-            <span class="ref" title={step.ref.detail || `Reading ${step.ref.name} at ${step.ref.commit}`}>
-              {step.ref.name} @ {step.ref.commit.slice(0, 7)}
-            </span>
-          {:else if step?.ref?.requested && session.view?.workingTree}
-            <span class="ref" title="Reading files as they are on disk">working tree</span>
-          {/if}
-          <span class="spacer"></span>
-          {#if then && step?.content}
-            <button class="open" aria-pressed={comparing} onclick={() => (comparing = !comparing)}>Then / Now</button>
-          {/if}
-          {#if step?.permalink}
-            <button class="open" onclick={() => session.copy(step.permalink, 'the permalink')}>Copy permalink</button>
-          {/if}
-          {#if step && statusLabel(step.location)}
-            <span class="badge {toneOf(step.location.status)}" title={step.location.detail}>
-              {statusLabel(step.location)}
-            </span>
-          {/if}
-          {#if step?.kind === 'file' && step.content !== ''}
-            <button class="open" onclick={() => session.openInEditor()} title="Open in your editor (o)">
-              Open in editor
-            </button>
-          {/if}
-        </div>
-
-        <div class="content">
-          {#if !step}
-            <div class="placeholder"></div>
-          {:else if step.kind === 'directory'}
-            {#if step.location.problem}
-              <div class="placeholder">{step.location.detail}</div>
-            {:else}
-              <DirectoryPane path={step.path} entries={step.entries ?? []} readme={step.readme} />
-            {/if}
-          {:else if step.unavailable}
-            <div class="placeholder">{step.unavailable}</div>
-          {:else if step.content === '' && step.location.status === 'missing' && !then}
-            <div class="placeholder">{step.location.detail}</div>
-          {:else if then && (comparing || step.location.status === 'missing')}
-            <!-- What the step was written about, beside what is there now. -->
-            <div class="compare" class:alone={step.location.status === 'missing'}>
-              <div class="side">
-                <p class="caption">Then, at {stamp}</p>
-                <div class="code">
-                  <CodePane
-                    path={step.path}
-                    content={thenText}
-                    range={{ startLine: 0, startCol: 0, endLine: 0, endCol: 0 }}
-                    firstLine={then.startLine}
-                  />
-                </div>
-              </div>
-              {#if step.location.status !== 'missing'}
-                <div class="side">
-                  <p class="caption">Now</p>
-                  <div class="code">
-                    <CodePane path={step.path} content={step.content} range={step.location.range} />
-                  </div>
-                </div>
-              {/if}
-            </div>
-          {:else}
-            <CodePane path={step.path} content={step.content} range={step.location.range} />
-          {/if}
-        </div>
-      </section>
+      <CodeArea />
     {/if}
 
-    <div class="reading">
+    <div class="reading" hidden={onlyCode}>
       {#if session.mapShown}
         <SystemMap />
       {/if}
@@ -282,73 +195,10 @@
     color: var(--muted);
   }
 
-  .toggle[aria-pressed='true'],
-  .open[aria-pressed='true'] {
+  .toggle[aria-pressed='true'] {
     background: var(--accent-soft);
     border-color: var(--accent);
     color: var(--text);
-  }
-
-  .ref {
-    margin-left: 6px;
-    padding: 0 7px;
-    border-radius: 999px;
-    background: var(--hover);
-    font-size: 11px;
-    color: var(--muted);
-  }
-
-  .compare {
-    height: 100%;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .compare.alone {
-    grid-template-columns: 1fr;
-  }
-
-  .side {
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .side + .side {
-    border-left: 1px solid var(--border);
-  }
-
-  .caption {
-    flex: none;
-    margin: 0;
-    padding: 4px 14px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--faint);
-    border-bottom: 1px solid var(--border);
-    background: var(--panel);
-  }
-
-  .side .code {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .open {
-    font-family: var(--sans);
-    font-size: 12px;
-    padding: 2px 9px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--raised);
-    color: var(--text);
-  }
-
-  .open:hover {
-    border-color: var(--accent);
   }
 
   .badge {
@@ -359,8 +209,7 @@
     white-space: nowrap;
   }
 
-  .badge.amber,
-  .badge.ok {
+  .badge.amber {
     background: var(--amber-soft);
     color: var(--amber);
   }
@@ -417,6 +266,10 @@
     grid-template-columns: 250px minmax(0, 1fr) minmax(320px, 30%);
   }
 
+  .panes.only-code {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+
   .panes.no-pane {
     grid-template-columns: 250px minmax(0, 1fr);
   }
@@ -428,70 +281,13 @@
     flex-direction: column;
   }
 
+  .reading[hidden] {
+    display: none;
+  }
+
   .reading > :global(.narrative) {
     flex: 1;
     min-height: 0;
     height: auto;
-  }
-
-  .pane {
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--border);
-  }
-
-  .crumbs {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 34px;
-    padding: 0 14px;
-    border-bottom: 1px solid var(--border);
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--muted);
-    white-space: nowrap;
-    overflow: hidden;
-  }
-
-  .trail {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .crumbs > :not(.trail):not(.spacer) {
-    flex: none;
-  }
-
-  .crumb.root {
-    font-weight: 600;
-    color: var(--text);
-  }
-
-  .crumb.line {
-    color: var(--accent);
-  }
-
-  .sep {
-    color: var(--faint);
-  }
-
-  .content {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .placeholder {
-    height: 100%;
-    display: grid;
-    place-items: center;
-    padding: 24px;
-    color: var(--muted);
-    text-align: center;
   }
 </style>

@@ -411,18 +411,18 @@ func TestService_OpenInEditor(T *testing.T) {
 
 		s, launcher := newServiceWith(nil)
 
-		_, err := s.OpenInEditor(t.Context(), mainTour, 0, "")
+		_, err := s.OpenInEditor(t.Context(), mainTour, 0, -1, "")
 		test.ErrorIs(t, err, ErrUnknownTour)
 
 		_, err = s.OpenTour(t.Context(), mainTour)
 		must.NoError(t, err)
 
 		for _, index := range []int{2, 3, 6} {
-			_, err = s.OpenInEditor(t.Context(), mainTour, index, "")
+			_, err = s.OpenInEditor(t.Context(), mainTour, index, -1, "")
 			test.ErrorIs(t, err, ErrNotAFile, test.Sprintf("step %d", index))
 		}
 
-		_, err = s.OpenInEditor(t.Context(), mainTour, 99, "")
+		_, err = s.OpenInEditor(t.Context(), mainTour, 99, -1, "")
 		test.ErrorIs(t, err, walk.ErrNoSuchStep)
 		test.Len(t, 0, launcher.opened)
 	})
@@ -512,5 +512,54 @@ func TestService_RepoActions(T *testing.T) {
 		view, err = s.OpenTour(t.Context(), draftTour)
 		must.NoError(t, err)
 		test.True(t, view.WorkingTree)
+	})
+}
+
+func TestService_Browse(T *testing.T) {
+	T.Parallel()
+
+	T.Run("lists and reads files of the step's repo, and nothing outside it", func(t *testing.T) {
+		t.Parallel()
+
+		s := newService()
+		_, err := s.OpenTour(t.Context(), mainTour)
+		must.NoError(t, err)
+
+		entries, err := s.Browse(t.Context(), mainTour, 0, -1, "")
+		must.NoError(t, err)
+		test.SliceContains(t, entries, gitsrc.Entry{Name: "docs", IsDir: true})
+		test.SliceContains(t, entries, gitsrc.Entry{Name: "a.go"})
+
+		file, err := s.BrowseFile(t.Context(), mainTour, 0, -1, "docs/x.md")
+		must.NoError(t, err)
+		test.Eq(t, &FileView{Path: "docs/x.md", Content: "x\n"}, file)
+
+		file, err = s.BrowseFile(t.Context(), mainTour, 0, -1, "bin/blob")
+		must.NoError(t, err)
+		test.Eq(t, "This is a binary file.", file.Unavailable)
+
+		_, err = s.BrowseFile(t.Context(), mainTour, 0, -1, "../outside")
+		test.ErrorIs(t, err, gitsrc.ErrEscapesRoot)
+
+		_, err = s.Browse(t.Context(), mainTour, 0, -1, "../..")
+		test.ErrorIs(t, err, gitsrc.ErrEscapesRoot)
+	})
+
+	T.Run("only steps with code can be browsed", func(t *testing.T) {
+		t.Parallel()
+
+		s := newService()
+
+		_, err := s.Browse(t.Context(), mainTour, 0, -1, "")
+		test.ErrorIs(t, err, ErrUnknownTour)
+
+		_, err = s.OpenTour(t.Context(), mainTour)
+		must.NoError(t, err)
+
+		_, err = s.Browse(t.Context(), mainTour, 6, -1, "")
+		test.ErrorIs(t, err, ErrNotAFile)
+
+		_, err = s.Browse(t.Context(), mainTour, 0, 3, "")
+		test.ErrorIs(t, err, ErrNotAFile)
 	})
 }

@@ -1,7 +1,7 @@
 // A recorded backend for browser tests: answers come from /fixture.json, which
 // cmd/tools/fixture writes by running the real Go service over a workspace.
 import { isExternalURL } from './api';
-import type { Api, Card, StepView, TourSummary, TourView, Workspace } from './api';
+import type { Api, Card, Entry, FileView, StepView, TourSummary, TourView, Workspace } from './api';
 
 interface Fixture {
   workspace: Workspace;
@@ -10,6 +10,9 @@ interface Fixture {
   steps: Record<string, StepView[]>;
   /** Steps and views again for each choice of each variable, keyed "path|name=value". */
   picked: Record<string, { view: TourView; steps: StepView[] }>;
+  /** A few recorded directory listings and files of each tour's first repo, for the file drawer. */
+  listings: Record<string, Record<string, Entry[]>>;
+  files: Record<string, Record<string, FileView>>;
   /** What Go made of each docent-links fence, by tour path and then fence body. */
   linkFences: Record<string, Record<string, Card[]>>;
 }
@@ -18,7 +21,7 @@ declare global {
   interface Window {
     /** What the app asked the outside world to do, for tests to assert on. */
     openedURLs: string[];
-    openedInEditor: { path: string; index: number; editorID: string }[];
+    openedInEditor: { path: string; index: number; extra: number; editorID: string }[];
     copied: string[];
     gitActions: string[];
     /** The recorded answers. Tests edit this, then call docentChanged, to stand in for a file changing. */
@@ -97,10 +100,31 @@ export const backend: Api = {
     }
     return cards;
   },
-  editors: async () => [{ id: 'zed', name: 'Zed' }],
-  openInEditor: async (path, index, editorID) => {
-    window.openedInEditor.push({ path, index, editorID });
-    return { via: 'editor', editor: { id: 'zed', name: 'Zed' }, note: '' };
+  editors: async () => [
+    { id: 'zed', name: 'Zed' },
+    { id: 'code', name: 'VS Code' },
+  ],
+  browse: async (path, _index, _extra, dir) => {
+    const entries = (await fixture()).listings[path]?.[dir];
+    if (!entries) {
+      throw new Error(`${dir || 'the root'} was not recorded in the fixture`);
+    }
+    return entries;
+  },
+  browseFile: async (path, _index, _extra, file) => {
+    const found = (await fixture()).files[path]?.[file];
+    if (!found) {
+      throw new Error(`${file} was not recorded in the fixture`);
+    }
+    return found;
+  },
+  openInEditor: async (path, index, extra, editorID) => {
+    window.openedInEditor.push({ path, index, extra, editorID });
+    return {
+      via: 'editor',
+      editor: editorID === 'code' ? { id: 'code', name: 'VS Code' } : { id: 'zed', name: 'Zed' },
+      note: '',
+    };
   },
   copy: async (text) => {
     window.copied.push(text);

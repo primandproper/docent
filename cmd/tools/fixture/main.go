@@ -17,6 +17,7 @@ import (
 
 	"github.com/primandproper/docent/internal/app"
 	"github.com/primandproper/docent/internal/core"
+	"github.com/primandproper/docent/internal/gitsrc"
 	"github.com/primandproper/docent/internal/links"
 	"github.com/primandproper/docent/internal/orderedjson"
 	"github.com/primandproper/docent/internal/tour"
@@ -31,6 +32,11 @@ type (
 		// Picked holds each tour again for every choice of every variable that
 		// has choices, keyed "path|name=value".
 		Picked map[string]picked `json:"picked"`
+		// Listings and Files are what the file drawer would be told about
+		// each tour's first step with code: every directory, and every file
+		// small enough to be worth recording.
+		Listings map[string]map[string][]gitsrc.Entry `json:"listings"`
+		Files    map[string]map[string]*app.FileView  `json:"files"`
 		// LinkFences holds what the service made of each docent-links fence,
 		// keyed by tour path and then by the fence's body.
 		LinkFences map[string]map[string][]links.Card `json:"linkFences"`
@@ -78,6 +84,8 @@ func run(ctx context.Context, testdata, output string) error {
 		Steps:      map[string][]*app.StepView{},
 		Picked:     map[string]picked{},
 		LinkFences: map[string]map[string][]links.Card{},
+		Listings:   map[string]map[string][]gitsrc.Entry{},
+		Files:      map[string]map[string]*app.FileView{},
 	}
 
 	if out.Tours, err = service.ListTours(ctx); err != nil {
@@ -97,6 +105,18 @@ func run(ctx context.Context, testdata, output string) error {
 
 		out.Views[path], out.Steps[path] = view, steps
 		out.LinkFences[path] = map[string][]links.Card{}
+		out.Listings[path] = map[string][]gitsrc.Entry{}
+		out.Files[path] = map[string]*app.FileView{}
+
+		for index, step := range steps {
+			if step.Kind == "file" && step.Content != "" {
+				if err = recordTree(ctx, service, path, index, "", out.Listings[path], out.Files[path]); err != nil {
+					return err
+				}
+
+				break
+			}
+		}
 
 		for _, step := range steps {
 			fences := visual.Fences(step.Body)
@@ -312,4 +332,36 @@ func record(ctx context.Context, service *app.Service, path string) (*app.TourVi
 	}
 
 	return view, steps, nil
+}
+
+// recordTree walks the repo a step's code is in, the way the file drawer
+// would, recording every listing and file.
+func recordTree(ctx context.Context, service *app.Service, path string, index int, dir string, listings map[string][]gitsrc.Entry, files map[string]*app.FileView) error {
+	entries, err := service.Browse(ctx, path, index, -1, dir)
+	if err != nil {
+		return fmt.Errorf("browsing %q of %q: %w", dir, path, err)
+	}
+
+	listings[dir] = entries
+
+	for _, entry := range entries {
+		child := entry.Name
+		if dir != "" {
+			child = dir + "/" + entry.Name
+		}
+
+		if entry.IsDir {
+			if err = recordTree(ctx, service, path, index, child, listings, files); err != nil {
+				return err
+			}
+
+			continue
+		}
+
+		if files[child], err = service.BrowseFile(ctx, path, index, -1, child); err != nil {
+			return fmt.Errorf("reading %q of %q: %w", child, path, err)
+		}
+	}
+
+	return nil
 }

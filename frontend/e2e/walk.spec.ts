@@ -481,3 +481,94 @@ test.describe('links within the app', () => {
     await expect(currentStep(page)).toContainText('The read handler');
   });
 });
+
+test.describe('the code pane', () => {
+  async function openDraft(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Reading an item/ }).click();
+    await expect(page.locator('.row.band')).toContainText('func (h *Handler) GetItem');
+  }
+
+  test('extra anchors are tabs, each with its own code, repo and status', async ({ page }) => {
+    await openDraft(page);
+
+    const tabs = page.getByRole('tablist', { name: 'Code for this step' }).getByRole('tab');
+    await expect(tabs).toHaveText(['items.go', 'writer', /purge/]);
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+
+    await tabs.nth(1).click();
+    await expect(page.locator('.row.band')).toContainText('func (h *Handler) UpdateItem');
+    await expect(page.locator('.crumbs')).toContainText('line 26');
+
+    // The third anchor is in another repo, where the code has moved since the stamp.
+    await tabs.nth(2).click();
+    await expect(page.locator('.crumbs .root')).toHaveText('worker');
+    await expect(page.locator('.crumbs .badge')).toHaveText('+2 lines');
+    await expect(tabs.nth(2).locator('.dot')).toBeVisible();
+
+    await page.keyboard.press('o');
+    await expect(page.getByRole('status').filter({ hasText: 'Opened in Zed.' })).toBeVisible();
+    expect(await page.evaluate(() => window.openedInEditor)).toEqual([expect.objectContaining({ index: 0, extra: 1 })]);
+
+    // Moving to another step goes back to that step's own code.
+    await page.keyboard.press('j');
+    await expect(page.getByRole('tablist')).toHaveCount(0);
+    await expect(page.locator('.row.band')).toContainText('const MAX_ATTEMPTS = 5;');
+  });
+
+  test('Open in… picks an editor for this step, and offers a rule to keep', async ({ page }) => {
+    await openDraft(page);
+
+    await page.keyboard.press('Shift+O');
+    const menu = page.getByRole('menu', { name: 'Open in…' });
+    await expect(menu.getByRole('menuitem')).toHaveText(['Zed', 'VS Code']);
+
+    await menu.getByRole('button', { name: 'Copy rule' }).nth(1).click();
+    expect(await page.evaluate(() => window.copied)).toEqual(['{"match":"**/*.go","use":"code"}']);
+
+    await menu.getByRole('menuitem', { name: 'VS Code' }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: 'Opened in VS Code.' })).toBeVisible();
+    expect(await page.evaluate(() => window.openedInEditor)).toEqual([
+      expect.objectContaining({ editorID: 'code', extra: -1 }),
+    ]);
+  });
+
+  test("the file drawer browses the step's repo and comes back", async ({ page }) => {
+    await openDraft(page);
+
+    await page.getByRole('button', { name: 'Files' }).click();
+    const drawer = page.getByRole('navigation', { name: 'Files' });
+    await expect(drawer.getByRole('button', { name: /internal/ })).toBeVisible();
+
+    await drawer.getByRole('button', { name: /internal/ }).click();
+    await drawer.getByRole('button', { name: /http/ }).click();
+    await drawer.getByRole('button', { name: 'items.go' }).click();
+
+    await expect(page.locator('.crumbs')).toContainText(/internal\s*›\s*http\s*›\s*items\.go/);
+    await expect(page.locator('.row.band')).toHaveCount(0);
+    await expect(page.locator('.code')).toContainText('package http');
+
+    await page.getByRole('button', { name: 'Back to the step' }).click();
+    await expect(page.locator('.row.band')).toContainText('func (h *Handler) GetItem');
+  });
+});
+
+test.describe('layout overrides', () => {
+  test('narrative hides the code, and code hides the narrative', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Every kind of visual/ }).click();
+
+    // `layout: code` on a step with an anchor: the code takes the window.
+    await page.locator('.step').nth(4).click();
+    await expect(page.locator('.pane')).toBeVisible();
+    await expect(page.locator('.narrative')).toBeHidden();
+    await page.getByRole('tab', { name: 'handler' }).click();
+    await expect(page.locator('.row.band')).toContainText('type Handler struct {');
+
+    // `layout: narrative`: no code pane at all.
+    await page.locator('.step').nth(3).click();
+    await expect(page.locator('.pane')).toHaveCount(0);
+    await expect(page.locator('.narrative')).toBeVisible();
+  });
+});

@@ -15,11 +15,30 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as editor$0 from "../editor/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as gitsrc$0 from "../gitsrc/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as links$0 from "../links/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+/**
+ * Browse lists a directory of the repo a step's code is in, at the ref the
+ * step is read at. dir is relative to that repo's root; "" is the root.
+ */
+export function Browse(path: string, index: number, extra: number, dir: string): $CancellablePromise<gitsrc$0.Entry[] | null> {
+    return $Call.ByID(3231350026, path, index, extra, dir);
+}
+
+/**
+ * BrowseFile reads a file of the repo a step's code is in, at the ref the
+ * step is read at.
+ */
+export function BrowseFile(path: string, index: number, extra: number, file: string): $CancellablePromise<$models.FileView | null> {
+    return $Call.ByID(1718863404, path, index, extra, file);
+}
 
 /**
  * Clone clones one of an open tour's missing repos to where the clone command
@@ -63,11 +82,12 @@ export function ListTours(): $CancellablePromise<$models.TourSummary[] | null> {
 
 /**
  * OpenInEditor opens a file step of an open tour in an editor, at the line its
- * anchor resolved to. editorID picks one from Editors; empty means the
- * reader's default. The frontend names a step, never a path.
+ * anchor resolved to. extra picks one of the step's extra anchors, or -1 for
+ * its own file. editorID picks one from Editors; empty means whatever the
+ * reader's rules and default say. The frontend names a step, never a path.
  */
-export function OpenInEditor(path: string, index: number, editorID: string): $CancellablePromise<editor$0.Result | null> {
-    return $Call.ByID(806951226, path, index, editorID);
+export function OpenInEditor(path: string, index: number, extra: number, editorID: string): $CancellablePromise<editor$0.Result | null> {
+    return $Call.ByID(806951226, path, index, extra, editorID);
 }
 
 /**

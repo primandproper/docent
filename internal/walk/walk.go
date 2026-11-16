@@ -69,6 +69,17 @@ type (
 		CloneCommand []string
 		// Links are the step's link cards, expanded.
 		Links []links.Card
+		// Extras are the step's additional anchors, shown as tabs.
+		Extras []Extra
+	}
+
+	// Extra is one of a step's additional anchors, resolved.
+	Extra struct {
+		_ struct{}
+		// Code holds the anchor's Root, Repo, Path, Ref, Anchor and
+		// CloneCommand, exactly as a file step's would be.
+		Code  *Step
+		Label string
 	}
 
 	// Dependencies are what a Walker resolves steps with.
@@ -220,12 +231,44 @@ func (w *walker) Step(ctx context.Context, t *tour.Tour, index int) (*Step, erro
 	case KindDirectory:
 		out.Path = s.Directory
 	case KindURI, KindContent:
-		return out, nil
 	}
 
+	if out.Kind == KindFile || out.Kind == KindDirectory {
+		if err := w.code(ctx, t, s, out); err != nil {
+			return nil, observability.PrepareAndLogError(err, logger, span, "resolving step")
+		}
+	}
+
+	for i := range s.Anchors {
+		a := &s.Anchors[i]
+
+		// An extra anchor is a file reference like the step's own, in the
+		// step's repo unless it names another.
+		pseudo := &tour.Step{
+			Repo: a.Repo, File: a.File, Line: a.Line, Pattern: a.Pattern,
+			Selection: a.Selection, ContentHash: a.ContentHash, Ref: s.Ref,
+		}
+		if pseudo.Repo == "" {
+			pseudo.Repo = s.Repo
+		}
+
+		extra := &Step{Kind: KindFile, Root: t.Root, Repo: pseudo.Repo, Path: a.File}
+		if err := w.code(ctx, t, pseudo, extra); err != nil {
+			return nil, observability.PrepareAndLogError(err, logger, span, "resolving anchor %q", a.Label)
+		}
+
+		out.Extras = append(out.Extras, Extra{Label: a.Label, Code: extra})
+	}
+
+	return out, nil
+}
+
+// code resolves what a file or directory step points at: which repo, at
+// which ref, and where in the file.
+func (w *walker) code(ctx context.Context, t *tour.Tour, s *tour.Step, out *Step) error {
 	repo, problem, detail, err := w.locateRepo(ctx, t, s, out)
 	if err != nil {
-		return nil, observability.PrepareAndLogError(err, logger, span, "locating step repo")
+		return fmt.Errorf("locating repo: %w", err)
 	}
 
 	if problem == "" {
@@ -243,17 +286,17 @@ func (w *walker) Step(ctx context.Context, t *tour.Tour, index int) (*Step, erro
 		out.Problem, out.Detail = problem, detail
 	case out.Kind == KindFile:
 		if out.Anchor, err = w.file(ctx, s, repo, out); err != nil {
-			return nil, observability.PrepareAndLogError(err, logger, span, "resolving step anchor")
+			return fmt.Errorf("resolving anchor: %w", err)
 		}
 
 		out.Path = out.Anchor.File
 	default:
-		if dirErr := w.directory(ctx, out); dirErr != nil {
-			return nil, observability.PrepareAndLogError(dirErr, logger, span, "listing step directory")
+		if err = w.directory(ctx, out); err != nil {
+			return fmt.Errorf("listing directory: %w", err)
 		}
 	}
 
-	return out, nil
+	return nil
 }
 
 // stepRef picks the ref a step is read at: its own, else its repo's, else,

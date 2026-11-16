@@ -1,5 +1,5 @@
 import { api, errorMessage } from './api';
-import type { StepView, TourSummary, TourView, VarView, Workspace } from './api';
+import type { FileView, StepView, TourSummary, TourView, VarView, Workspace } from './api';
 import { NavHistory } from './history';
 import { parseInternal } from './internal';
 import type { Place } from './history';
@@ -80,6 +80,11 @@ class Session {
 
     const target = Math.max(0, Math.min(index, count - 1));
     const generation = ++this.generation;
+    if (target !== this.index) {
+      this.tab = -1;
+    }
+    this.browsing = null;
+    this.editorMenu = false;
     this.index = target;
     if (record) {
       this.history.visit({ path: this.path, index: target });
@@ -238,13 +243,40 @@ class Session {
     }
   }
 
-  /** Opens the current step's file in the reader's editor. */
-  async openInEditor(editorID = ''): Promise<void> {
-    if (this.view?.steps?.[this.index]?.kind !== 'file') {
+  /** Which code the pane shows: -1 for the step's own, else the index of an extra anchor. */
+  tab = $state(-1);
+  /** Whether the file drawer is open. The reader's choice, kept across steps. */
+  drawer = $state(false);
+  /** A file opened from the drawer, shown in place of the step's code. */
+  browsing = $state<FileView | null>(null);
+  /** Whether the Open in… menu is showing. */
+  editorMenu = $state(false);
+
+  showTab(tab: number): void {
+    this.tab = tab;
+    this.browsing = null;
+  }
+
+  /** Shows a file from the drawer, or goes back to the step's code when given ''. */
+  async browse(file: string): Promise<void> {
+    if (!file) {
+      this.browsing = null;
       return;
     }
     try {
-      const result = await api.openInEditor(this.path, this.index, editorID);
+      this.browsing = await api.browseFile(this.path, this.index, this.tab, file);
+    } catch (err) {
+      this.error = errorMessage(err);
+    }
+  }
+
+  /** Opens the code the pane is showing in the reader's editor. */
+  async openInEditor(editorID = ''): Promise<void> {
+    if (this.tab < 0 && this.view?.steps?.[this.index]?.kind !== 'file') {
+      return;
+    }
+    try {
+      const result = await api.openInEditor(this.path, this.index, this.tab, editorID);
       const where =
         result.via === 'editor'
           ? `Opened in ${result.editor.name}`

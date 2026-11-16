@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/tailscale/hujson"
 )
 
@@ -40,8 +41,23 @@ type (
 		// Custom defines editors by argv template: {path}, {line} and {col}
 		// are substituted, and the result is run without a shell.
 		Custom map[string]CustomEditor `json:"custom"`
-		// Default is the editor `o` uses.
+		// Default is the editor `o` uses when no rule matches.
 		Default string `json:"default"`
+		// Rules pick an editor per file. The first match wins.
+		Rules []EditorRule `json:"rules"`
+	}
+
+	// EditorRule maps files to an editor. A rule with both Match and Repo
+	// needs both to hold; a rule with neither matches nothing.
+	EditorRule struct {
+		_ struct{} `json:"-"`
+		// Match is a glob over the file's path inside its repo, with `**`
+		// and `{a,b}` alternatives: "**/*.{java,kt}".
+		Match string `json:"match"`
+		// Repo is a tour's logical repo name.
+		Repo string `json:"repo"`
+		// Use is the id of the editor to open matching files in.
+		Use string `json:"use"`
 	}
 
 	// CustomEditor is an editor launched by an argv template.
@@ -229,4 +245,38 @@ func (c *Config) DefaultEditor() string {
 // arrives with a cloned repo, and Docent never runs anything a repo brought.
 func (c *Config) CustomEditors() map[string]CustomEditor {
 	return c.User.Editors.Custom
+}
+
+// EditorFor returns the editor the rules choose for a file, or "". Workspace
+// rules are consulted before the user's, being the more specific. A rule only
+// names an editor; what that editor runs is still the user's to define.
+func (c *Config) EditorFor(repo, relPath string) string {
+	for _, rules := range [][]EditorRule{c.Workspace.Editors.Rules, c.User.Editors.Rules} {
+		for i := range rules {
+			if rules[i].matches(repo, relPath) {
+				return rules[i].Use
+			}
+		}
+	}
+
+	return ""
+}
+
+func (r *EditorRule) matches(repo, relPath string) bool {
+	if r.Use == "" || (r.Match == "" && r.Repo == "") {
+		return false
+	}
+
+	if r.Repo != "" && r.Repo != repo {
+		return false
+	}
+
+	if r.Match == "" {
+		return true
+	}
+
+	// A malformed glob matches nothing; it doesn't break opening files.
+	ok, err := doublestar.Match(r.Match, filepath.ToSlash(relPath))
+
+	return err == nil && ok
 }
