@@ -7,3 +7,5 @@ frontend/node_modules
 frontend/e2e/dist
 frontend/e2e/public
 frontend/e2e/results
+# Compiled from build/appicon.icon on every build, and never the same bytes twice.
+build/darwin/Assets.car

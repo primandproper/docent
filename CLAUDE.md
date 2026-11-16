@@ -39,8 +39,11 @@ product design and the source of truth for what gets built; milestones M0 to M5 
 - `cmd/tools/fixture`: builds a workspace of real git repos from `frontend/e2e/testdata`, with drift, and records
   the real service's answers for the browser tests.
 - `cmd/tools/skill`: writes `skill/` from the guide (`make skill`).
-- `scripts/package.sh`, `sign.sh`, `notarize.sh`, `cask.sh` and `packaging/`: the release, driven by
-  `.github/workflows/release.yaml`.
+- `scripts/release.sh` (`make release VERSION=vX.Y.Z`): the release, run from a Mac. It chains `package.sh`,
+  `sign.sh`, `notarize.sh` and `cask.sh`. There is deliberately no release workflow: signing in CI means shipping
+  the certificate to GitHub as a secret, and signing locally uses the keychain.
+- `packaging/icon/`: the icon's SVG sources. `make icons` regenerates `build/appicon.png` and `icons.icns` from
+  them. `Assets.car` is compiled on every build and isn't checked in.
 - `frontend/`: Svelte 5 + TypeScript + Vite. `src/lib/api.ts` is the only door to Go; `src/lib/session.svelte.ts`
   holds all app state. `bindings/` is generated and committed.
 - `build/`: Wails build assets (macOS only).

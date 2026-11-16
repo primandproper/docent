@@ -85,6 +85,11 @@ lint: golang_lint shellcheck lint_frontend
 bindings:
 	$(WAILS) task common:generate:bindings
 
+# icons rebuilds the app icon from the SVGs in packaging/icon. Commit the output.
+.PHONY: icons
+icons:
+	$(SCRIPTS_DIR)/icons.sh
+
 # skill regenerates the agent skill and the AGENTS.md snippet from the
 # authoring guide in internal/guide. Commit the output.
 .PHONY: skill
@@ -121,3 +126,12 @@ build: $(FRONTEND_DIR)/node_modules
 .PHONY: dev
 dev: $(FRONTEND_DIR)/node_modules
 	$(WAILS) task dev
+
+## RELEASING
+
+# release builds, signs, notarizes and publishes a version from this Mac, then
+# updates the Homebrew tap: `make release VERSION=v0.1.0`. Add DRY_RUN=1 to
+# build and sign only. scripts/release.sh says what it needs set up first.
+.PHONY: release
+release:
+	$(SCRIPTS_DIR)/release.sh $(VERSION) $(if $(DRY_RUN),--dry-run,)
