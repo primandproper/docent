@@ -19,18 +19,31 @@ type (
 	// Request names a file and where in it to point.
 	Request struct {
 		_ struct{}
+		// Drift, when set, asks for the anchor to be followed forward from
+		// the commit the tour was written against. Ref must be its Tip.
+		Drift *Drift
 		// Root is the directory File is relative to.
 		Root string
 		// Ref is the git revision to read at, or "" for the working tree.
 		Ref  string
 		File string
-		Spec Spec
+		// ContentHash is the anchored text's recorded hash, if the tour has one.
+		ContentHash string
+		Spec        Spec
 	}
 
 	// Resolution is a Request answered: the file's content and where the
 	// anchor landed in it.
 	Resolution struct {
 		_ struct{}
+		// Then is the code as it was at the stamp, when it has since changed
+		// or been removed.
+		Then *Then
+		// Removed is the commit that removed the code, when one was found.
+		Removed *gitsrc.Commit
+		// File is the path the anchor resolved in: the request's, unless the
+		// file was renamed since the stamp.
+		File string
 		// Content is nil when the file couldn't be read.
 		Content  []byte
 		Location Location
@@ -46,6 +59,9 @@ type (
 	resolver struct {
 		_      struct{}
 		source gitsrc.FileSource
+		// git is set when source can answer history questions, which is what
+		// following drift needs.
+		git    gitsrc.Git
 		logger logging.Logger
 		tracer tracing.Tracer
 	}
@@ -53,10 +69,14 @@ type (
 
 var _ Resolver = (*resolver)(nil)
 
-// NewResolver returns a Resolver that reads files through source.
+// NewResolver returns a Resolver that reads files through source. Anchors are
+// only followed forward from a stamp when source is a gitsrc.Git.
 func NewResolver(source gitsrc.FileSource, logger logging.Logger, tracerProvider tracing.Provider) Resolver {
+	git, _ := source.(gitsrc.Git) //nolint:errcheck // a plain FileSource simply can't follow drift
+
 	return &resolver{
 		source: source,
+		git:    git,
 		logger: logging.NewNamedLogger(logger, o11yName),
 		tracer: tracing.NewNamedTracer(tracerProvider, o11yName),
 	}
@@ -69,6 +89,17 @@ func (r *resolver) Resolve(ctx context.Context, req *Request) (*Resolution, erro
 	defer span.End()
 
 	logger := r.logger.WithValues(map[string]any{"root": req.Root, "ref": req.Ref, "file": req.File})
+
+	if req.Drift != nil && r.git != nil && req.Drift.Stamp != req.Drift.Tip {
+		followed, err := r.relocate(ctx, req)
+		if err != nil {
+			return nil, observability.PrepareAndLogError(err, logger, span, "following anchor from its stamp")
+		}
+
+		if followed != nil {
+			return followed, nil
+		}
+	}
 
 	content, err := r.source.ReadFile(ctx, req.Root, req.Ref, req.File)
 	if err != nil {
@@ -90,14 +121,20 @@ func (r *resolver) Resolve(ctx context.Context, req *Request) (*Resolution, erro
 
 		logger.WithValue("problem", string(loc.Problem)).Debug("anchored file is unavailable")
 
-		return &Resolution{Location: loc}, nil
+		return &Resolution{File: req.File, Location: loc}, nil
 	}
 
 	lines := SplitLines(content)
+	res := &Resolution{File: req.File, Content: content, Location: Locate(lines, req.Spec), LineCount: len(lines)}
 
-	return &Resolution{
-		Content:   content,
-		Location:  Locate(lines, req.Spec),
-		LineCount: len(lines),
-	}, nil
+	// A recorded hash catches an edit that left the anchor where it was.
+	if req.ContentHash != "" && (res.Location.Status == StatusOK || res.Location.Status == StatusMoved) && res.Location.Range.StartLine > 0 {
+		if Hash(lines, res.Location.Range) != req.ContentHash {
+			res.Location.Status = StatusChanged
+			res.Location.Problem = diag.CodeContentChanged
+			res.Location.Detail = "this code changed since the step was written"
+		}
+	}
+
+	return res, nil
 }

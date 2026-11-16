@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/primandproper/docent/internal/anchor"
 	"github.com/primandproper/docent/internal/diag"
@@ -51,6 +53,8 @@ type (
 		// Problem and Detail say why a directory couldn't be listed.
 		Problem diag.Code
 		Detail  string
+		// Ref is what the step's code is being read at.
+		Ref *Ref
 		// Repo is the logical repo the step lives in, or "" for the tour's own root.
 		Repo string
 		// Body is the step's Markdown body file, when it has one.
@@ -70,6 +74,9 @@ type (
 	Dependencies struct {
 		_      struct{}
 		Source gitsrc.FileSource
+		// Git answers history questions: refs, stamps and drift. Nil means
+		// everything is read from the working tree.
+		Git gitsrc.Git
 		// Repos locates the repos a tour names. Nil means none are checked out.
 		Repos workspace.RepoResolver
 		// Vars fills in link templates. Nil means only tour defaults apply.
@@ -81,6 +88,38 @@ type (
 	// Walker resolves steps.
 	Walker interface {
 		Step(ctx context.Context, t *tour.Tour, index int) (*Step, error)
+		// Repo reports where one of a tour's repos stands: found or not, what
+		// is being read, and how far that is from the tour's stamp.
+		Repo(ctx context.Context, t *tour.Tour, name string) (*RepoState, error)
+		// SetWorkingTree switches between reading at each ref and reading
+		// files as they are on disk, uncommitted changes included.
+		SetWorkingTree(on bool)
+		// Reset forgets what refs resolved to, so a fetch or a new commit is
+		// seen. Call it when the reader reloads.
+		Reset()
+	}
+
+	// RepoState is where one of a tour's repos stands on this machine.
+	RepoState struct {
+		_   struct{} `json:"-"`
+		Ref *Ref     `json:"ref"`
+		// StampedAt and LastFetch are zero when unknown.
+		StampedAt time.Time `json:"stampedAt"`
+		LastFetch time.Time `json:"lastFetch"`
+		Name      string    `json:"name"`
+		Remote    string    `json:"remote"`
+		// Root is the checkout, or "" when it isn't on this machine.
+		Root string `json:"root"`
+		// Stamp is the commit the tour was written against, in full, or ""
+		// when the tour has none or it isn't in the local repository.
+		Stamp string `json:"stamp"`
+		// CloneCommand would fetch a missing repo.
+		CloneCommand []string `json:"cloneCommand"`
+		// Behind is how many commits the stamp is behind what is being read.
+		Behind int  `json:"behind"`
+		Found  bool `json:"found"`
+		// StampUnreachable is set when the tour has a stamp that isn't here.
+		StampUnreachable bool `json:"stampUnreachable"`
 	}
 
 	walker struct {
@@ -89,13 +128,22 @@ type (
 		source   gitsrc.FileSource
 		repos    workspace.RepoResolver
 		vars     *links.Vars
-		logger   logging.Logger
-		tracer   tracing.Tracer
+		git      gitsrc.Git
+		refs     map[string]*Ref
+		mu       sync.Mutex
+		// workingTree is the reader's toggle: read files as they are on disk.
+		workingTree bool
+		logger      logging.Logger
+		tracer      tracing.Tracer
 	}
 )
 
-// ErrNoSuchStep is returned for an index outside the tour.
-var ErrNoSuchStep = errors.New("no such step")
+var (
+	// ErrNoSuchStep is returned for an index outside the tour.
+	ErrNoSuchStep = errors.New("no such step")
+	// ErrNoSuchRepo is returned for a repo the tour doesn't define.
+	ErrNoSuchRepo = errors.New("no such repo")
+)
 
 var _ Walker = (*walker)(nil)
 
@@ -111,6 +159,8 @@ func NewWalker(deps *Dependencies) Walker {
 		source:   deps.Source,
 		repos:    deps.Repos,
 		vars:     vars,
+		git:      deps.Git,
+		refs:     map[string]*Ref{},
 		logger:   logging.NewNamedLogger(deps.Logger, o11yName),
 		tracer:   tracing.NewNamedTracer(deps.TracerProvider, o11yName),
 	}
@@ -158,27 +208,30 @@ func (w *walker) Step(ctx context.Context, t *tour.Tour, index int) (*Step, erro
 		return out, nil
 	}
 
-	problem, detail, err := w.locateRepo(ctx, t, s, out)
+	repo, problem, detail, err := w.locateRepo(ctx, t, s, out)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "locating step repo")
 	}
 
+	if problem == "" {
+		out.Ref = w.resolveRef(ctx, out.Root, stepRef(t, s, repo))
+
+		if out.Ref.Problem == diag.CodeRefMissing {
+			problem, detail = out.Ref.Problem, out.Ref.Detail
+		}
+	}
+
 	switch {
 	case problem != "" && out.Kind == KindFile:
-		out.Anchor = &anchor.Resolution{Location: anchor.Location{Status: anchor.StatusMissing, Problem: problem, Detail: detail}}
+		out.Anchor = &anchor.Resolution{File: s.File, Location: anchor.Location{Status: anchor.StatusMissing, Problem: problem, Detail: detail}}
 	case problem != "":
 		out.Problem, out.Detail = problem, detail
 	case out.Kind == KindFile:
-		res, resolveErr := w.resolver.Resolve(ctx, &anchor.Request{
-			Root: out.Root,
-			File: s.File,
-			Spec: anchor.Spec{Line: s.Line, Pattern: s.Pattern, Selection: s.Selection},
-		})
-		if resolveErr != nil {
-			return nil, observability.PrepareAndLogError(resolveErr, logger, span, "resolving step anchor")
+		if out.Anchor, err = w.file(ctx, s, repo, out); err != nil {
+			return nil, observability.PrepareAndLogError(err, logger, span, "resolving step anchor")
 		}
 
-		out.Anchor = res
+		out.Path = out.Anchor.File
 	default:
 		if dirErr := w.directory(ctx, out); dirErr != nil {
 			return nil, observability.PrepareAndLogError(dirErr, logger, span, "listing step directory")
@@ -188,15 +241,149 @@ func (w *walker) Step(ctx context.Context, t *tour.Tour, index int) (*Step, erro
 	return out, nil
 }
 
+// stepRef picks the ref a step is read at: its own, else its repo's, else,
+// for a step in the tour's own root, the tour's CodeTour `ref`.
+func stepRef(t *tour.Tour, s *tour.Step, repo *tour.Repo) string {
+	switch {
+	case s.Ref != "":
+		return s.Ref
+	case repo != nil:
+		return repo.Ref
+	default:
+		return t.Ref
+	}
+}
+
+// file resolves a file step's anchor, following it forward from the repo's
+// stamp when there is one.
+func (w *walker) file(ctx context.Context, s *tour.Step, repo *tour.Repo, out *Step) (*anchor.Resolution, error) {
+	req := &anchor.Request{
+		Root:        out.Root,
+		Ref:         out.Ref.Commit,
+		File:        s.File,
+		ContentHash: s.ContentHash,
+		Spec:        anchor.Spec{Line: s.Line, Pattern: s.Pattern, Selection: s.Selection},
+	}
+
+	unreachable := false
+
+	// A step with its own ref is pinned on purpose ("how it worked before"),
+	// so it isn't followed anywhere.
+	if repo != nil && repo.Stamp != "" && s.Ref == "" && out.Ref.Commit != "" && w.git != nil {
+		stamp, err := w.git.Commit(ctx, out.Root, repo.Stamp)
+		if err != nil {
+			unreachable = true
+		} else {
+			req.Drift = &anchor.Drift{Stamp: stamp, Tip: out.Ref.Commit}
+			// The hash describes the code at the stamp, and following the
+			// diff from the stamp already says whether it changed.
+			req.ContentHash = ""
+
+			if stamp == out.Ref.Commit {
+				req.ContentHash = s.ContentHash
+			}
+		}
+	}
+
+	res, err := w.resolver.Resolve(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if unreachable && (res.Location.Status == anchor.StatusOK || res.Location.Status == anchor.StatusMoved) {
+		res.Location.Status = anchor.StatusUnverified
+		res.Location.Problem = diag.CodeStampUnreachable
+		res.Location.Detail = fmt.Sprintf("the tour was written against %s, which isn't in the local repository, so this code can't be confirmed unchanged", repo.Stamp)
+	}
+
+	return res, nil
+}
+
+func (w *walker) SetWorkingTree(on bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.workingTree = on
+}
+
+func (w *walker) Reset() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.refs = map[string]*Ref{}
+}
+
+func (w *walker) Repo(ctx context.Context, t *tour.Tour, name string) (*RepoState, error) {
+	ctx, span := w.tracer.StartSpan(ctx)
+	defer span.End()
+
+	var repo *tour.Repo
+
+	for i := range t.Repos {
+		if t.Repos[i].Name == name {
+			repo = &t.Repos[i]
+		}
+	}
+
+	if repo == nil {
+		return nil, fmt.Errorf("repo %q: %w", name, ErrNoSuchRepo)
+	}
+
+	state := &RepoState{Name: repo.Name, Remote: repo.Remote, CloneCommand: []string{}}
+
+	if w.repos == nil {
+		return state, nil
+	}
+
+	checkout, err := w.repos.Resolve(ctx, repo)
+	if err != nil {
+		return nil, observability.PrepareAndLogError(err, w.logger.WithValue("repo", name), span, "resolving repo")
+	}
+
+	if !checkout.Found {
+		state.CloneCommand = checkout.CloneCommand
+		return state, nil
+	}
+
+	state.Found, state.Root = true, checkout.Root
+	state.Ref = w.resolveRef(ctx, checkout.Root, repo.Ref)
+
+	if w.git == nil {
+		return state, nil
+	}
+
+	if fetched, ok := w.git.LastFetch(ctx, checkout.Root); ok {
+		state.LastFetch = fetched
+	}
+
+	if repo.Stamp == "" {
+		return state, nil
+	}
+
+	stamp, err := w.git.Describe(ctx, checkout.Root, repo.Stamp)
+	if err != nil {
+		state.StampUnreachable = true
+		return state, nil
+	}
+
+	state.Stamp, state.StampedAt = stamp.SHA, stamp.Time
+
+	if state.Ref.Commit != "" {
+		if behind, countErr := w.git.CountBetween(ctx, checkout.Root, stamp.SHA, state.Ref.Commit); countErr == nil {
+			state.Behind = behind
+		}
+	}
+
+	return state, nil
+}
+
 // locateRepo points out.Root at the step's repo. A step without `repo` stays
 // rooted at the tour. A repo that is unknown or not checked out is a problem
 // to report, not an error.
-func (w *walker) locateRepo(ctx context.Context, t *tour.Tour, s *tour.Step, out *Step) (problem diag.Code, detail string, err error) {
+func (w *walker) locateRepo(ctx context.Context, t *tour.Tour, s *tour.Step, out *Step) (repo *tour.Repo, problem diag.Code, detail string, err error) {
 	if s.Repo == "" {
-		return "", "", nil
+		return nil, "", "", nil
 	}
-
-	var repo *tour.Repo
 
 	for i := range t.Repos {
 		if t.Repos[i].Name == s.Repo {
@@ -206,26 +393,26 @@ func (w *walker) locateRepo(ctx context.Context, t *tour.Tour, s *tour.Step, out
 	}
 
 	if repo == nil {
-		return diag.CodeRepoUnknown, fmt.Sprintf("repo %q is not defined in the tour's `repos`", s.Repo), nil
+		return nil, diag.CodeRepoUnknown, fmt.Sprintf("repo %q is not defined in the tour's `repos`", s.Repo), nil
 	}
 
 	if w.repos == nil {
-		return diag.CodeRepoMissing, fmt.Sprintf("repo %q is not checked out on this machine", s.Repo), nil
+		return repo, diag.CodeRepoMissing, fmt.Sprintf("repo %q is not checked out on this machine", s.Repo), nil
 	}
 
 	checkout, err := w.repos.Resolve(ctx, repo)
 	if err != nil {
-		return "", "", fmt.Errorf("resolving repo %q: %w", s.Repo, err)
+		return nil, "", "", fmt.Errorf("resolving repo %q: %w", s.Repo, err)
 	}
 
 	if !checkout.Found {
 		out.CloneCommand = checkout.CloneCommand
-		return diag.CodeRepoMissing, fmt.Sprintf("repo %q is not checked out on this machine", s.Repo), nil
+		return repo, diag.CodeRepoMissing, fmt.Sprintf("repo %q is not checked out on this machine", s.Repo), nil
 	}
 
 	out.Root = checkout.Root
 
-	return "", "", nil
+	return repo, "", "", nil
 }
 
 // body loads the step's Markdown body, which lives beside the tour file.
@@ -255,7 +442,7 @@ func (w *walker) body(ctx context.Context, t *tour.Tour, s *tour.Step, out *Step
 }
 
 func (w *walker) directory(ctx context.Context, out *Step) error {
-	entries, err := w.source.ReadDir(ctx, out.Root, "", out.Path)
+	entries, err := w.source.ReadDir(ctx, out.Root, out.Ref.Commit, out.Path)
 	if err != nil {
 		switch {
 		case errors.Is(err, gitsrc.ErrEscapesRoot):
@@ -281,7 +468,7 @@ func (w *walker) directory(ctx context.Context, out *Step) error {
 			continue
 		}
 
-		readme, readErr := w.source.ReadFile(ctx, out.Root, "", strings.TrimSuffix(out.Path, "/")+"/"+e.Name)
+		readme, readErr := w.source.ReadFile(ctx, out.Root, out.Ref.Commit, strings.TrimSuffix(out.Path, "/")+"/"+e.Name)
 		if readErr != nil {
 			// The listing is still worth showing without its README.
 			w.logger.WithError(readErr).Warn("directory README is unreadable")

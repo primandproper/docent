@@ -37,7 +37,7 @@ and the signed Homebrew release.
   "vars": { "grafana": "https://grafana.example.com" },
   "editors": {
     "default": "zed",                         // zed, cursor, code, idea, goland, subl, or a custom one
-    "custom": { "nvim": { "argv": ["ghostty", "-e", "nvim", "+{line}", "{path}"] } }
+    "custom": { "helix": { "argv": ["ghostty", "-e", "hx", "{path}:{line}:{col}"] } }
   }
 }
 ```

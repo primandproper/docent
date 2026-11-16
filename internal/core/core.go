@@ -38,6 +38,7 @@ type (
 		Vars      *links.Vars
 		Store     tour.Store
 		Source    gitsrc.FileSource
+		Git       gitsrc.Git
 		Repos     workspace.RepoResolver
 		Walker    walk.Walker
 		Validator validate.Validator
@@ -59,16 +60,20 @@ func New(opts *Options) (*Core, error) {
 		return nil, fmt.Errorf("loading configuration: %w", err)
 	}
 
+	git := gitsrc.NewGit(opts.Logger, opts.TracerProvider)
+
 	c := &Core{
 		Config: config,
 		Vars:   links.NewVars(config, opts.VarFlags),
 		Store:  tour.NewStore(opts.Logger, opts.TracerProvider),
-		Source: gitsrc.NewWorkingTree(opts.Logger, opts.TracerProvider),
+		Source: git,
+		Git:    git,
 		Repos:  workspace.NewResolver(config, opts.Logger, opts.TracerProvider),
 	}
 
 	c.Walker = walk.NewWalker(&walk.Dependencies{
 		Source:         c.Source,
+		Git:            c.Git,
 		Repos:          c.Repos,
 		Vars:           c.Vars,
 		Logger:         opts.Logger,
@@ -77,4 +82,11 @@ func New(opts *Options) (*Core, error) {
 	c.Validator = validate.NewValidator(c.Store, c.Walker, opts.Logger, opts.TracerProvider)
 
 	return c, nil
+}
+
+// Close stops the helper processes the services started.
+func (c *Core) Close() {
+	if c.Git != nil {
+		c.Git.Close()
+	}
 }
