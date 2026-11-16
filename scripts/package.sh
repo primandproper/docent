@@ -36,10 +36,11 @@ done
 lipo -create -output "${APP}/Contents/MacOS/docent" "${OUT}/docent-arm64" "${OUT}/docent-amd64"
 rm -- "${OUT}/docent-arm64" "${OUT}/docent-amd64"
 
-cp build/darwin/icons.icns "${APP}/Contents/Resources/"
-if [ -f build/darwin/Assets.car ]; then
-  cp build/darwin/Assets.car "${APP}/Contents/Resources/"
-fi
+# Assets.car, the layered icon macOS 26 composes, isn't checked in: it is
+# compiled here from build/appicon.icon.
+scripts/wails.sh task common:generate:icons
+
+cp build/darwin/icons.icns build/darwin/Assets.car "${APP}/Contents/Resources/"
 
 # The bundle's version is the release's, without the leading "v".
 cp build/darwin/Info.plist "${APP}/Contents/Info.plist"

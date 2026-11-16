@@ -19,5 +19,6 @@ cd "${ROOT}"
 rsvg-convert --width 1024 --height 1024 packaging/icon/appicon.svg --output build/appicon.png
 cp packaging/icon/mark.svg build/appicon.icon/Assets/docent_mark.svg
 
-# Wails turns the PNG into icons.icns and the .icon bundle into Assets.car.
+# Wails turns the PNG into icons.icns (committed) and the .icon bundle into
+# Assets.car (not committed: every build compiles it afresh).
 scripts/wails.sh task common:generate:icons
