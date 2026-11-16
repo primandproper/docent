@@ -429,6 +429,42 @@ test.describe('the system map', () => {
     await expect(page.getByRole('region', { name: 'System map' }).locator('svg')).toBeVisible();
   });
 
+  test('it can take the centre pane, and still follows the tour from there', async ({ page }) => {
+    await openDraft(page);
+
+    const map = page.getByRole('region', { name: 'System map' });
+    const small = (await map.locator('svg').boundingBox())!;
+
+    await page.keyboard.press('Shift+M');
+    await expect(map).toHaveClass(/large/);
+    await expect(page.locator('.pane')).toHaveCount(0);
+    await expect(page.locator('.narrative')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'System map' })).toHaveCount(1);
+
+    const large = (await map.locator('svg').boundingBox())!;
+    expect(large.width).toBeGreaterThan(small.width * 1.5);
+
+    // Still the tour's index, and still tracking the current step.
+    await expect(node(page, 'api')).toHaveClass(/current/);
+    await node(page, 'worker').click();
+    await expect(currentStep(page)).toContainText('Retries in the worker');
+    await expect(node(page, 'worker')).toHaveClass(/current/);
+
+    // It stays large on a step with no code of its own.
+    await page.locator('.step').nth(3).click();
+    await expect(map).toHaveClass(/large/);
+
+    await map.getByRole('button', { name: 'Smaller' }).click();
+    await expect(map).not.toHaveClass(/large/);
+
+    // Escape leaves the large map before it leaves the tour.
+    await map.hover();
+    await map.getByRole('button', { name: 'Larger' }).click();
+    await page.keyboard.press('Escape');
+    await expect(map).not.toHaveClass(/large/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Reading an item' })).toBeVisible();
+  });
+
   test('a tour without a map has no map panel or button', async ({ page }) => {
     await openMain(page);
 

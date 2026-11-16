@@ -51,6 +51,8 @@
       void session.next();
     } else if (event.key === 'k' || event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
       void session.previous();
+    } else if (event.key === 'M') {
+      session.toggleLargeMap();
     } else if (event.key === 'm') {
       session.mapShown = !session.mapShown;
     } else if (event.key === 'O') {
@@ -61,6 +63,8 @@
       goingTo = true;
     } else if (event.key === 'Escape' && session.editorMenu) {
       session.editorMenu = false;
+    } else if (event.key === 'Escape' && session.mapLarge) {
+      session.mapLarge = false;
     } else if (event.key === 'Escape') {
       void session.close();
     } else {

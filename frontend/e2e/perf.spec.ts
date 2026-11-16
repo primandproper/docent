@@ -4,11 +4,19 @@ import type { Page } from '@playwright/test';
 // The frontend's share of the design's performance budgets, measured in the
 // production bundle in WebKit. The Go share is in internal/perf.
 //
-// These run alone: a stopwatch shared with other pages measures the other pages.
+// They run one at a time, in a project of their own that starts once the other
+// tests are done (see playwright.config.ts).
 test.describe.configure({ mode: 'serial' });
 
-const FIRST_STEP_MS = 1000;
-const NAVIGATION_MS = 50;
+// The budgets are for an Apple-silicon laptop, and that is where they are held
+// to. A shared CI runner is several times slower and has no real display, so
+// there the times get slack and dropped frames aren't counted: CI is only
+// asked to catch a change that makes something many times slower.
+const SLACK = process.env.CI ? 8 : 1;
+
+const FIRST_STEP_MS = 1000 * SLACK;
+const NAVIGATION_MS = 50 * SLACK;
+const MEDIAN_FRAME_MS = 20 * SLACK;
 // A frame at 60 fps is 16.7 ms. One that takes more than two has visibly dropped.
 const DROPPED_FRAME_MS = 34;
 
@@ -35,7 +43,7 @@ test('the first step of a tour is on screen within a second of launch', async ({
   await expect(page.locator('.row.band .gutter')).toHaveText('15000');
 });
 
-test('moving to a step whose file is already loaded takes under 50 ms', async ({ page }) => {
+test('moving to a step whose file is already loaded is immediate', async ({ page }) => {
   const tour = await perfTour(page);
   await page.addInitScript((path) => {
     window.docentLaunch = { tour: path, step: '' };
@@ -104,6 +112,8 @@ test('a 20,000-line file scrolls without dropping frames', async ({ page }) => {
   const dropped = frames.filter((ms) => ms > DROPPED_FRAME_MS).length;
 
   console.log(`scrolling: median frame ${median.toFixed(1)} ms, ${dropped} of ${frames.length} frames dropped`);
-  expect(median).toBeLessThan(20);
-  expect(dropped).toBeLessThanOrEqual(frames.length * 0.05);
+  expect(median).toBeLessThan(MEDIAN_FRAME_MS);
+  if (!process.env.CI) {
+    expect(dropped).toBeLessThanOrEqual(frames.length * 0.05);
+  }
 });

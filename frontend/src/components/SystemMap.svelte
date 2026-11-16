@@ -3,6 +3,9 @@
   import type { Rendered } from '../lib/diagram';
   import { session } from '../lib/session.svelte';
 
+  /** Large: the map has the centre pane, and is drawn as big as fits. */
+  let { large = false }: { large?: boolean } = $props();
+
   const source = $derived(session.view?.map ?? '');
   const steps = $derived(session.view?.tour?.steps ?? []);
 
@@ -86,7 +89,14 @@
 </script>
 
 {#if source}
-  <section class="map" aria-label="System map">
+  <section class="map" class:large aria-label="System map">
+    <button
+      class="size"
+      onclick={() => session.toggleLargeMap()}
+      title={large ? 'Back beside the narrative (⇧M)' : 'Give the map the centre pane (⇧M)'}
+    >
+      {large ? 'Smaller' : 'Larger'}
+    </button>
     {#if failed}
       <p class="problem">The map couldn't be drawn: {failed}</p>
     {/if}
@@ -111,9 +121,56 @@
     background: var(--bg);
   }
 
+  .map {
+    position: relative;
+  }
+
+  .size {
+    position: absolute;
+    z-index: 1;
+    top: 6px;
+    right: 8px;
+    padding: 1px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--raised);
+    font-size: 11.5px;
+    color: var(--muted);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  /* The control stays out of the way until the map has the reader's attention. */
+  .map:hover .size,
+  .size:focus-visible,
+  .large .size {
+    opacity: 1;
+  }
+
   .diagram {
     display: flex;
     justify-content: center;
+  }
+
+  .map.large {
+    max-height: none;
+    height: 100%;
+    min-width: 0;
+    padding: 20px;
+    border-bottom: none;
+    border-right: 1px solid var(--border);
+  }
+
+  .large .diagram {
+    height: 100%;
+    align-items: center;
+  }
+
+  /* Mermaid caps its SVG at the diagram's natural width. Large means as big as fits. */
+  .large .diagram :global(svg) {
+    width: 100%;
+    height: 100%;
+    max-width: none !important;
   }
 
   .diagram :global(svg) {
