@@ -18,7 +18,7 @@ test.describe('tour picker', () => {
     await page.goto('/');
 
     const tours = page.locator('.tour');
-    await expect(tours).toHaveCount(4);
+    await expect(tours).toHaveCount(5);
     await expect(tours.nth(0)).toContainText(MAIN);
     await expect(tours.nth(0)).toContainText('1 problem');
     await expect(tours.nth(0)).toContainText('6 steps');
@@ -33,7 +33,7 @@ test.describe('tour picker', () => {
 
   test('filters with / and opens with the keyboard', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('.tour')).toHaveCount(4);
+    await expect(page.locator('.tour')).toHaveCount(5);
 
     await page.keyboard.press('/');
     await expect(page.getByRole('searchbox')).toBeFocused();
@@ -570,5 +570,38 @@ test.describe('layout overrides', () => {
     await page.locator('.step').nth(3).click();
     await expect(page.locator('.pane')).toHaveCount(0);
     await expect(page.locator('.narrative')).toBeVisible();
+  });
+});
+
+test.describe('opening from outside', () => {
+  test('a requested tour and step open straight away', async ({ page }) => {
+    await page.goto('/');
+    const path = await page.evaluate(async () => {
+      const fixture = (await (await fetch('/fixture.json')).json()) as { tours: { path: string }[] };
+      return fixture.tours.find((t) => t.path.endsWith('reading-an-item.tour'))!.path;
+    });
+
+    // Stand in for `docent open <tour> --step retries`.
+    await page.addInitScript((tour) => {
+      window.docentLaunch = { tour, step: 'retries' };
+    }, path);
+    await page.reload();
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Reading an item' })).toBeVisible();
+    await expect(currentStep(page)).toContainText('Retries in the worker');
+  });
+
+  test('with no folder, the app asks for one', async ({ page }) => {
+    await page.route('**/fixture.json', async (route) => {
+      const response = await route.fetch();
+      const fixture = (await response.json()) as { workspace: { root: string; name: string }; tours: unknown[] };
+      // What the service reports when launched from Finder.
+      await route.fulfill({ response, json: { ...fixture, workspace: { root: '', name: '' }, tours: [] } });
+    });
+    await page.goto('/');
+
+    await expect(page.getByRole('heading', { level: 2, name: 'Open a folder to begin' })).toBeVisible();
+    await page.getByRole('button', { name: 'Open a folder…' }).click();
+    expect(await page.evaluate(() => window.gitActions)).toEqual(['choose-folder']);
   });
 });

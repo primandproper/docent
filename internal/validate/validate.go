@@ -69,6 +69,10 @@ func (v *validator) Tour(ctx context.Context, path string) ([]diag.Diagnostic, e
 
 	diags = append(diags, mapDiagnostics(t, v.walker.Map(ctx, t))...)
 
+	if d, misplaced := placement(t, v.walker.Home(ctx, t)); misplaced {
+		diags = append(diags, d)
+	}
+
 	for i := range t.Steps {
 		step, stepErr := v.walker.Step(ctx, t, i)
 		if stepErr != nil {
@@ -136,6 +140,42 @@ func stepDiagnostic(t *tour.Tour, index int, step *walk.Step) (diag.Diagnostic, 
 	}
 
 	return d, true
+}
+
+// placement warns about a cross-repo tour kept inside one of its repos.
+func placement(t *tour.Tour, home string) (diag.Diagnostic, bool) {
+	if home == "" {
+		return diag.Diagnostic{}, false
+	}
+
+	var others []string
+
+	note := func(repo string) {
+		if repo != "" && repo != home && !slices.Contains(others, repo) {
+			others = append(others, repo)
+		}
+	}
+
+	for i := range t.Steps {
+		note(t.Steps[i].Repo)
+
+		for j := range t.Steps[i].Anchors {
+			note(t.Steps[i].Anchors[j].Repo)
+		}
+	}
+
+	if len(others) == 0 {
+		return diag.Diagnostic{}, false
+	}
+
+	return diag.Diagnostic{
+		File:     t.Path,
+		Pointer:  diag.Pointer("repos"),
+		Severity: diag.SeverityWarning,
+		Code:     diag.CodeTourMisplaced,
+		Message:  fmt.Sprintf("this tour lives in the %s repo but also anchors into %s", home, strings.Join(others, ", ")),
+		Hint:     "Keep cross-repo tours in a dedicated tours repo, listed under `tourPaths`, so nobody opens one with half its repos missing.",
+	}, true
 }
 
 // mapDiagnostics checks the system map and every `mapFocus` against it.

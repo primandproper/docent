@@ -4,6 +4,7 @@
   "title": "How a step resolves",
   "description": "From a .tour file on disk to a highlighted band of code, in the order the data moves.",
   "isPrimary": true,
+  "map": { "file": "how-a-step-resolves/map.mmd" },
   "steps": [
     {
       "id": "start",
@@ -12,6 +13,7 @@
     },
     {
       "id": "entry-point",
+      "mapFocus": ["cli"],
       "title": "One entry point",
       "file": "main.go",
       "pattern": "^func run\\(\\) int",
@@ -20,12 +22,14 @@
     },
     {
       "id": "cli",
+      "mapFocus": ["cli"],
       "title": "The cli package",
       "directory": "internal/cli",
       "description": "The root command opens the app. `validate` is the first headless command; the rest of the authoring commands will land beside it."
     },
     {
       "id": "parse",
+      "mapFocus": ["file", "e1", "parse"],
       "title": "Parsing keeps what it doesn't understand",
       "file": "internal/tour/parse.go",
       "pattern": "^func Parse\\(",
@@ -34,6 +38,7 @@
     },
     {
       "id": "confine",
+      "mapFocus": ["walker", "e3", "confine"],
       "title": "Reads are confined to the root",
       "file": "internal/gitsrc/worktree.go",
       "pattern": "^func Confine\\(",
@@ -42,6 +47,7 @@
     },
     {
       "id": "locate",
+      "mapFocus": ["walker", "e4", "locate"],
       "title": "Locating the anchor",
       "file": "internal/anchor/anchor.go",
       "pattern": "^func Locate\\(",
@@ -50,26 +56,30 @@
     },
     {
       "id": "walker",
+      "mapFocus": ["parse", "e2", "walker"],
+      "body": "how-a-step-resolves/07-walker.md",
       "title": "The walker ties them together",
       "file": "internal/walk/walk.go",
       "pattern": "^func \\(w \\*walker\\) Step\\(",
-      "line": 134,
+      "line": 213,
       "description": "The walker is the one place a step meets the code. The app's service and `docent validate` both call it, so there is no second implementation to drift."
     },
     {
       "id": "trust-boundary",
+      "mapFocus": ["walker", "e5", "service"],
       "title": "The trust boundary",
       "file": "internal/app/service.go",
       "pattern": "^func \\(s \\*Service\\) Step\\(",
-      "line": 320,
+      "line": 595,
       "description": "The Wails service is deliberately thin. Its job is to distrust the frontend: a tour path must be one the workspace discovered, and a step index must be inside the tour, whatever the UI believed.\n\nFiles that are binary or very large are withheld here, with a reason, so they are never shipped to the webview."
     },
     {
       "id": "code-pane",
+      "mapFocus": ["service", "e7", "pane"],
       "title": "Only the visible lines exist",
       "file": "frontend/src/components/CodePane.svelte",
       "pattern": "const LINE_HEIGHT = ",
-      "line": 11,
+      "line": 22,
       "description": "The code pane renders a fixed-height row per line and only the rows near the viewport, so a 20,000-line file scrolls like a short one.\n\nText appears immediately; Shiki's colors arrive a moment later, one lazily loaded grammar per language."
     },
     {

@@ -1,0 +1,8 @@
+flowchart LR
+    file[(.tour file)] e1@--> parse[Parser]
+    parse e2@--> walker[Walker]
+    walker e3@--> confine[Confined reads]
+    walker e4@--> locate[Anchor location]
+    walker e5@--> service[App service]
+    walker e6@--> cli[CLI]
+    service e7@--> pane[Code pane]

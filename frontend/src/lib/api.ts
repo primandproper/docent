@@ -58,6 +58,12 @@ export interface Api {
   /** Opens an http(s) URL in the system browser. Anything else is refused. */
   openExternal(url: string): Promise<void>;
   copy(text: string): Promise<void>;
+  /** The tour the app was asked to open from outside (`docent open`, a docent:// link), once. */
+  launch(): Promise<{ tour: string; step: string }>;
+  /** Asks the reader for a folder and opens it. Resolves to the workspace as it now is. */
+  chooseFolder(): Promise<Workspace>;
+  /** Calls back when a docent:// link arrives while the app is running. */
+  onOpen(callback: () => void): () => void;
   /** Calls back whenever a tour changes on disk. Returns a function that stops it. */
   onChanged(callback: () => void): () => void;
 }

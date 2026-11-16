@@ -5,6 +5,7 @@ package core
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/primandproper/docent/internal/gitsrc"
 	"github.com/primandproper/docent/internal/links"
@@ -47,17 +48,28 @@ type (
 
 // New loads the folder's configuration and wires the services up.
 func New(opts *Options) (*Core, error) {
+	var err error
+
 	userPath := opts.UserConfigPath
 	if userPath == "" {
-		var err error
 		if userPath, err = workspace.UserConfigPath(); err != nil {
 			return nil, fmt.Errorf("locating user config: %w", err)
 		}
 	}
 
-	config, err := workspace.Load(opts.Root, userPath)
-	if err != nil {
-		return nil, fmt.Errorf("loading configuration: %w", err)
+	// With no folder open there is no workspace file to look for, only the
+	// user's own config.
+	config := &workspace.Config{}
+	if opts.Root != "" {
+		if config, err = workspace.Load(opts.Root, userPath); err != nil {
+			return nil, fmt.Errorf("loading configuration: %w", err)
+		}
+	} else if _, statErr := os.Stat(userPath); statErr == nil {
+		if config, err = workspace.Load(os.TempDir(), userPath); err != nil {
+			return nil, fmt.Errorf("loading configuration: %w", err)
+		}
+
+		config.Root, config.Workspace, config.WorkspacePath = "", workspace.File{}, ""
 	}
 
 	git := gitsrc.NewGit(opts.Logger, opts.TracerProvider)

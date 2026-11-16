@@ -12,10 +12,16 @@ product design and the source of truth for what gets built; milestones M0 to M5 
 - `internal/tour`: discovery, parsing, the model, and `Watch` (live reload). `Parse` keeps the document as an ordered tree (`Tour.Raw`) so
   unknown fields and key order survive.
 - `internal/orderedjson`: the ordered JSON tree behind that.
-- `internal/gitsrc`: `FileSource`, reading files confined to a root. `Confine` is the path-escape check.
-- `internal/anchor`: `Locate` turns `line`/`pattern`/`selection` into a range and a status.
-- `internal/walk`: resolves a step against the code. The app and `docent validate` both go through it; keep it
-  that way so they can't disagree.
+- `internal/gitsrc`: `FileSource` (reads confined to a root; `Confine` is the path-escape check) and `Git`, the
+  only place git is run. Reads at a ref go through one long-lived `git cat-file --batch` per repo. Answers fixed by
+  full commit SHAs (diffs, renames) are memoized for the session. `gittest` builds real repos for tests.
+- `internal/anchor`: `Locate` turns `line`/`pattern`/`selection` into a range and a status; `relocate.go` follows
+  an anchor forward from a stamp (rename, diff line-mapping, re-find, removal commit).
+- `internal/walk`: resolves a step against the code: which repo, which ref (`refs.go`), where in the file, plus
+  the system map and each repo's state. The app and every CLI command go through it; keep it that way so they
+  can't disagree.
+- `internal/mermaid`: a tolerant flowchart reader, only to check `mapFocus` ids.
+- `internal/visual`: validates animated visuals and scans Markdown for `docent-*` fences.
 - `internal/validate`: turns resolved steps into diagnostics.
 - `internal/workspace`: `docent.json` and the user config, and `RepoResolver`, which maps a tour's repos to local
   checkouts (mapping, then sibling folder, then origin URL).
@@ -28,8 +34,13 @@ product design and the source of truth for what gets built; milestones M0 to M5 
 - `internal/diag`: the diagnostic type and codes. The JSON shape and the codes are a stable contract: add, never
   rename or reuse.
 - `internal/logs`: the file logger (`~/Library/Logs/docent/docent.log`). Stdout belongs to command output.
-- `schema/tour.v1.json`: the tour JSON Schema, embedded by the `schema` package.
-- `cmd/tools/fixture`: records the real service's answers for a workspace, for the browser tests.
+- `internal/perf`: the design's performance budgets as tests.
+- `schema/`: `tour.v1.json` and `visual.v1.json`, embedded by the `schema` package.
+- `cmd/tools/fixture`: builds a workspace of real git repos from `frontend/e2e/testdata`, with drift, and records
+  the real service's answers for the browser tests.
+- `cmd/tools/skill`: writes `skill/` from the guide (`make skill`).
+- `scripts/package.sh`, `sign.sh`, `notarize.sh`, `cask.sh` and `packaging/`: the release, driven by
+  `.github/workflows/release.yaml`.
 - `frontend/`: Svelte 5 + TypeScript + Vite. `src/lib/api.ts` is the only door to Go; `src/lib/session.svelte.ts`
   holds all app state. `bindings/` is generated and committed.
 - `build/`: Wails build assets (macOS only).
@@ -49,6 +60,16 @@ make test_e2e ARGS=--ui # browser tests only
 `make format` spin forever instead of failing.
 
 ## Conventions
+
+- Every exported method of `app.Service` is callable from the webview. Anything the frontend must not be able to
+  do (change folder without a dialog, queue a tour) stays unexported.
+- The app never writes tours or config. Its only writes are a `git fetch` or `git clone` the reader confirmed in
+  the UI; a remote from a tour is checked by `cloneable` before git sees it.
+- A step's code is read at its ref's commit, never from the checkout, unless the working-tree toggle is on.
+- Mermaid and ELK are loaded on first use. Arrowheads in the visuals use explicit markers, not `context-stroke`,
+  which WebKit doesn't support.
+- Visual snapshots live in `frontend/e2e/visuals.spec.ts-snapshots`. Playwright only rewrites a snapshot that
+  differs beyond tolerance, so delete the file before `--update-snapshots` when a small change must be captured.
 
 - Extension fields are only interpreted when a tour sets `"docent": 1`. A plain CodeTour file is never reinterpreted.
 - A broken anchor is an answer, not an error: resolution returns a status and a `diag.Code`, and the UI shows its

@@ -77,7 +77,7 @@ func (a *application) loadTour(ctx context.Context, arg string) (*core.Core, *to
 		return nil, nil, fmt.Errorf("resolving %q: %w", arg, err)
 	}
 
-	services, err := a.coreFor(tour.RootFor(abs), nil)
+	services, err := a.coreFor(tour.RootFor(abs))
 	if err != nil {
 		return nil, nil, err
 	}

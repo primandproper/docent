@@ -43,14 +43,14 @@ jobs:
       - name: Set up
         run: make setup
 
-      - name: Check formatting and generated bindings
+      - name: Check formatting and generated files
         run: |
           set -euo pipefail
 
-          make format bindings
+          make format bindings skill
 
           if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::make format bindings changed files; run it and commit the result"
+            echo "::error::make format bindings skill changed files; run it and commit the result"
             git status --short
             git diff
             exit 1

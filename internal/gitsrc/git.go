@@ -113,7 +113,12 @@ type (
 		tracer    tracing.Tracer
 		batches   map[string]*batch
 		locations map[string]location
-		mu        sync.Mutex
+		// memo holds answers that can never change, because they are about
+		// commits named by full SHA: what was renamed between two of them,
+		// how a file differs between them, what a short SHA expands to.
+		memo   map[string]any
+		mu     sync.Mutex
+		memoMu sync.Mutex
 	}
 )
 
@@ -129,7 +134,36 @@ func NewGit(logger logging.Logger, tracerProvider tracing.Provider) Git {
 		tracer:    tracing.NewNamedTracer(tracerProvider, gitO11yName),
 		batches:   map[string]*batch{},
 		locations: map[string]location{},
+		memo:      map[string]any{},
 	}
+}
+
+// remember returns the memoized answer for key, computing it once. Only use
+// it for questions whose answer is fixed by the SHAs in the key.
+func remember[T any](g *git, key string, compute func() (T, error)) (T, error) {
+	g.memoMu.Lock()
+	cached, ok := g.memo[key]
+	g.memoMu.Unlock()
+
+	if ok {
+		return cached.(T), nil //nolint:errcheck,forcetypeassert // each key prefix is only ever stored with one type
+	}
+
+	value, err := compute()
+	if err != nil {
+		return value, err
+	}
+
+	g.memoMu.Lock()
+	g.memo[key] = value
+	g.memoMu.Unlock()
+
+	return value, nil
+}
+
+// isFullSHA reports whether rev names a commit immutably.
+func isFullSHA(rev string) bool {
+	return len(rev) >= 40 && hexSHA.MatchString(rev)
 }
 
 // run executes git in dir and returns its trimmed stdout.
@@ -173,13 +207,23 @@ func (g *git) Locate(ctx context.Context, dir string) (top, prefix string, err e
 }
 
 func (g *git) Commit(ctx context.Context, dir, rev string) (string, error) {
-	// --end-of-options keeps a ref that starts with a dash from being read as a flag.
-	out, err := g.run(ctx, dir, "rev-parse", "--verify", "--quiet", "--end-of-options", rev+"^{commit}")
-	if err != nil || out == "" {
-		return "", fmt.Errorf("%q: %w", rev, ErrRevNotFound)
+	resolve := func() (string, error) {
+		// --end-of-options keeps a ref that starts with a dash from being read as a flag.
+		out, err := g.run(ctx, dir, "rev-parse", "--verify", "--quiet", "--end-of-options", rev+"^{commit}")
+		if err != nil || out == "" {
+			return "", fmt.Errorf("%q: %w", rev, ErrRevNotFound)
+		}
+
+		return out, nil
 	}
 
-	return out, nil
+	// A commit id, even abbreviated, names the same commit for as long as it
+	// names one at all. A branch or tag can move, so those are always asked.
+	if !LooksLikeSHA(rev) {
+		return resolve()
+	}
+
+	return remember(g, "commit\x00"+dir+"\x00"+rev, resolve)
 }
 
 func (g *git) Describe(ctx context.Context, dir, rev string) (*Commit, error) {
@@ -262,28 +306,42 @@ func (g *git) CountBetween(ctx context.Context, dir, from, to string) (int, erro
 }
 
 func (g *git) RenamedTo(ctx context.Context, dir, from, to, file string) (string, error) {
-	_, prefix, err := g.Locate(ctx, dir)
+	top, prefix, err := g.Locate(ctx, dir)
 	if err != nil {
 		return "", err
 	}
 
 	// Rename detection needs both sides in view, so the diff can't be limited
-	// to the old path. Only renames are listed, which keeps it short.
-	out, err := g.run(ctx, dir, "diff", "-M", "--name-status", "--diff-filter=R", "-z", from, to)
+	// to the old path: every rename between the two commits is found at once
+	// and kept, since every anchor in the repo will ask.
+	renames := func() (map[string]string, error) {
+		out, runErr := g.run(ctx, top, "diff", "-M", "--name-status", "--diff-filter=R", "-z", from, to)
+		if runErr != nil {
+			return nil, runErr
+		}
+
+		found := map[string]string{}
+		fields := strings.Split(out, "\x00")
+
+		for i := 0; i+2 < len(fields); i += 3 {
+			found[fields[i+1]] = fields[i+2]
+		}
+
+		return found, nil
+	}
+
+	var all map[string]string
+	if isFullSHA(from) && isFullSHA(to) {
+		all, err = remember(g, "renames\x00"+top+"\x00"+from+"\x00"+to, renames)
+	} else {
+		all, err = renames()
+	}
+
 	if err != nil {
 		return "", err
 	}
 
-	want := prefix + filepath.ToSlash(file)
-	fields := strings.Split(out, "\x00")
-
-	for i := 0; i+2 < len(fields); i += 3 {
-		if fields[i+1] == want {
-			return strings.TrimPrefix(fields[i+2], prefix), nil
-		}
-	}
-
-	return "", nil
+	return strings.TrimPrefix(all[prefix+filepath.ToSlash(file)], prefix), nil
 }
 
 func (g *git) diffArgs(ctx context.Context, dir, from, to, oldFile, newFile string, extra ...string) ([]string, error) {
@@ -298,6 +356,16 @@ func (g *git) diffArgs(ctx context.Context, dir, from, to, oldFile, newFile stri
 }
 
 func (g *git) Diff(ctx context.Context, dir, from, to, oldFile, newFile string) ([]Hunk, error) {
+	if !isFullSHA(from) || !isFullSHA(to) {
+		return g.diff(ctx, dir, from, to, oldFile, newFile)
+	}
+
+	return remember(g, strings.Join([]string{"diff", dir, from, to, oldFile, newFile}, "\x00"), func() ([]Hunk, error) {
+		return g.diff(ctx, dir, from, to, oldFile, newFile)
+	})
+}
+
+func (g *git) diff(ctx context.Context, dir, from, to, oldFile, newFile string) ([]Hunk, error) {
 	args, err := g.diffArgs(ctx, dir, from, to, oldFile, newFile, "-U0")
 	if err != nil {
 		return nil, err

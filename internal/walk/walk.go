@@ -103,6 +103,9 @@ type (
 		// Repo reports where one of a tour's repos stands: found or not, what
 		// is being read, and how far that is from the tour's stamp.
 		Repo(ctx context.Context, t *tour.Tour, name string) (*RepoState, error)
+		// Home names the repo, among those the tour describes, that the tour
+		// file itself lives in, or "" when it lives in none of them.
+		Home(ctx context.Context, t *tour.Tour) string
 		// Map loads the tour's system map and lists what it defines. It
 		// returns nil for a tour without one.
 		Map(ctx context.Context, t *tour.Tour) *Map
@@ -580,4 +583,27 @@ func (w *walker) Map(ctx context.Context, t *tour.Tour) *Map {
 	out.Defined = mermaid.Parse(out.Source)
 
 	return out
+}
+
+func (w *walker) Home(ctx context.Context, t *tour.Tour) string {
+	if w.git == nil || len(t.Repos) == 0 {
+		return ""
+	}
+
+	if _, _, err := w.git.Locate(ctx, t.Root); err != nil {
+		return ""
+	}
+
+	origin := workspace.NormalizeRemote(w.git.Origin(ctx, t.Root))
+	if origin == "" {
+		return ""
+	}
+
+	for i := range t.Repos {
+		if workspace.NormalizeRemote(t.Repos[i].Remote) == origin {
+			return t.Repos[i].Name
+		}
+	}
+
+	return ""
 }

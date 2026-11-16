@@ -186,6 +186,10 @@ func absolute(base, path string) string {
 // parent. The parent is what makes the plain case need no config: clone the
 // tours repo beside the repos it describes, open it, and they are found.
 func (c *Config) RepoRoots() []string {
+	if c.Root == "" {
+		return append(append([]string{}, c.Workspace.RepoRoots...), c.User.RepoRoots...)
+	}
+
 	roots := []string{c.Root}
 	roots = append(roots, c.Workspace.RepoRoots...)
 	roots = append(roots, c.User.RepoRoots...)

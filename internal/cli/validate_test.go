@@ -19,8 +19,8 @@ const (
 	brokeTour = `{"title": "Broken", "steps": [{ "description": "d", "file": "gone.go" }]}`
 )
 
-// workspace builds a folder with one source file and the given tours.
-func workspace(t *testing.T, tours map[string]string) string {
+// plainWorkspace builds a folder with one source file and the given tours.
+func plainWorkspace(t *testing.T, tours map[string]string) string {
 	t.Helper()
 
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -58,7 +58,7 @@ func TestValidate(T *testing.T) {
 	T.Run("a clean workspace exits 0", func(t *testing.T) {
 		t.Parallel()
 
-		root := workspace(t, map[string]string{"a.tour": cleanTour})
+		root := plainWorkspace(t, map[string]string{"a.tour": cleanTour})
 
 		code, stdout, stderr := run(t, "validate", root)
 		test.Eq(t, ExitClean, code)
@@ -69,7 +69,7 @@ func TestValidate(T *testing.T) {
 	T.Run("errors exit 1 and say where", func(t *testing.T) {
 		t.Parallel()
 
-		root := workspace(t, map[string]string{"a.tour": cleanTour, "b.tour": brokeTour})
+		root := plainWorkspace(t, map[string]string{"a.tour": cleanTour, "b.tour": brokeTour})
 
 		code, stdout, _ := run(t, "validate", root)
 		test.Eq(t, ExitErrors, code)
@@ -81,7 +81,7 @@ func TestValidate(T *testing.T) {
 	T.Run("warnings exit 0, or 2 under --strict", func(t *testing.T) {
 		t.Parallel()
 
-		root := workspace(t, map[string]string{"a.tour": movedTour})
+		root := plainWorkspace(t, map[string]string{"a.tour": movedTour})
 
 		code, _, _ := run(t, "validate", root)
 		test.Eq(t, ExitClean, code)
@@ -94,7 +94,7 @@ func TestValidate(T *testing.T) {
 	T.Run("errors outrank warnings under --strict", func(t *testing.T) {
 		t.Parallel()
 
-		root := workspace(t, map[string]string{"a.tour": movedTour, "b.tour": brokeTour})
+		root := plainWorkspace(t, map[string]string{"a.tour": movedTour, "b.tour": brokeTour})
 
 		code, _, _ := run(t, "validate", "--strict", root)
 		test.Eq(t, ExitErrors, code)
@@ -103,7 +103,7 @@ func TestValidate(T *testing.T) {
 	T.Run("--json prints the contract and nothing else", func(t *testing.T) {
 		t.Parallel()
 
-		root := workspace(t, map[string]string{"b.tour": brokeTour})
+		root := plainWorkspace(t, map[string]string{"b.tour": brokeTour})
 		path := filepath.Join(root, ".tours", "b.tour")
 
 		code, stdout, _ := run(t, "validate", "--json", path)
@@ -134,7 +134,7 @@ func TestValidate(T *testing.T) {
 	T.Run("--json on a clean run is an empty array, not null", func(t *testing.T) {
 		t.Parallel()
 
-		root := workspace(t, map[string]string{"a.tour": cleanTour})
+		root := plainWorkspace(t, map[string]string{"a.tour": cleanTour})
 
 		code, stdout, _ := run(t, "validate", "--json", root)
 		test.Eq(t, ExitClean, code)
@@ -173,7 +173,7 @@ func TestRoot(T *testing.T) {
 	T.Run("logs go to the log directory, not stdout", func(t *testing.T) {
 		t.Parallel()
 
-		root := workspace(t, map[string]string{"a.tour": cleanTour})
+		root := plainWorkspace(t, map[string]string{"a.tour": cleanTour})
 		logDir := t.TempDir()
 
 		var out, errOut bytes.Buffer

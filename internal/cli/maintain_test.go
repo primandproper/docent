@@ -133,7 +133,7 @@ func TestStamp(T *testing.T) {
 	T.Run("needs a docent tour whose repos are here", func(t *testing.T) {
 		t.Parallel()
 
-		root := workspace(t, map[string]string{"a.tour": cleanTour})
+		root := plainWorkspace(t, map[string]string{"a.tour": cleanTour})
 
 		code, _, stderr := run(t, "stamp", filepath.Join(root, ".tours", "a.tour"))
 		test.Eq(t, ExitErrors, code)
@@ -197,7 +197,7 @@ func TestFmt(T *testing.T) {
 	T.Run("rewrites to the canonical layout without changing values", func(t *testing.T) {
 		t.Parallel()
 
-		root := workspace(t, map[string]string{"a.tour": cleanTour})
+		root := plainWorkspace(t, map[string]string{"a.tour": cleanTour})
 		path := filepath.Join(root, ".tours", "a.tour")
 		before := readTour(t, path)
 

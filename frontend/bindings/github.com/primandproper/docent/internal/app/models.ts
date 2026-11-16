@@ -47,6 +47,23 @@ export interface FileView {
 }
 
 /**
+ * Service is the API the frontend calls.
+ * LaunchRequest is a tour the app was asked to open from outside: by
+ * `docent open`, or by a docent:// link.
+ */
+export interface LaunchRequest {
+    /**
+     * Tour is the tour's path, or "" when there is nothing to open.
+     */
+    "tour": string;
+
+    /**
+     * Step is the id (or 1-based number) of the step to start at, or "".
+     */
+    "step": string;
+}
+
+/**
  * StepSummary is what the step rail needs to know about a step.
  */
 export interface StepSummary {

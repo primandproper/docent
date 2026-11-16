@@ -61,18 +61,25 @@
 
 <main class="picker">
   <header>
-    <h1>{session.workspace?.name ?? 'Docent'}</h1>
+    <h1>{session.workspace?.name || 'Docent'}</h1>
     <p class="root selectable">{session.workspace?.root ?? ''}</p>
   </header>
 
-  {#if session.tours.length === 0}
+  {#if !session.workspace?.root}
+    <div class="empty">
+      <h2>Open a folder to begin</h2>
+      <p>Pick a folder that holds tours, or the folder your repos are cloned into.</p>
+      <p><button class="choose" onclick={() => session.chooseFolder()}>Open a folder…</button> <kbd>⌘O</kbd></p>
+      <p>From a terminal, <code>docent .</code> opens the folder you are in.</p>
+    </div>
+  {:else if session.tours.length === 0}
     <div class="empty">
       <h2>No tours here yet</h2>
       <p>
         Docent looks for <code>.tour</code> files in <code>.tours/</code>, <code>.vscode/tours/</code> and
         <code>.github/tours/</code> under this folder.
       </p>
-      <p>Press <kbd>⌘R</kbd> to look again.</p>
+      <p>Press <kbd>⌘R</kbd> to look again, or <kbd>⌘O</kbd> to open another folder.</p>
     </div>
   {:else}
     <input
@@ -125,7 +132,9 @@
       {/each}
     </ul>
 
-    <footer><kbd>/</kbd> search <kbd>↑</kbd><kbd>↓</kbd> choose <kbd>↵</kbd> open <kbd>⌘R</kbd> reload</footer>
+    <footer>
+      <kbd>/</kbd> search <kbd>↑</kbd><kbd>↓</kbd> choose <kbd>↵</kbd> open <kbd>⌘R</kbd> reload <kbd>⌘O</kbd> open a folder
+    </footer>
   {/if}
 </main>
 
@@ -273,6 +282,14 @@
     margin: 0 0 8px;
     font-size: 17px;
     color: var(--text);
+  }
+
+  .choose {
+    padding: 6px 13px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 600;
   }
 
   code {

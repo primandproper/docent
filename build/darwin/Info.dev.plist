@@ -13,6 +13,17 @@
             <string>0.0.1</string>
         <key>CFBundleGetInfoString</key>
             <string>(c) 2026 primandproper</string>
+        <key>CFBundleURLTypes</key>
+            <array>
+                <dict>
+                    <key>CFBundleURLName</key>
+                        <string>software.primandproper.docent</string>
+                    <key>CFBundleURLSchemes</key>
+                        <array>
+                            <string>docent</string>
+                        </array>
+                </dict>
+            </array>
         <key>CFBundleShortVersionString</key>
             <string>0.0.1</string>
         <key>CFBundleIconFile</key>

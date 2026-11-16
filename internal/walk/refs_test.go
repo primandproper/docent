@@ -237,3 +237,28 @@ func TestWalker_Stamps(T *testing.T) {
 		test.ErrorIs(t, err, ErrNoSuchRepo)
 	})
 }
+
+func TestWalker_Home(T *testing.T) {
+	T.Parallel()
+
+	T.Run("names the repo the tour file lives in, by its origin", func(t *testing.T) {
+		t.Parallel()
+
+		repo := gittest.New(t)
+		repo.Git("remote", "add", "origin", "https://github.com/acme/api.git")
+
+		w := gitWalker(t, repo.Dir)
+		tr := &tour.Tour{Root: repo.Dir, Repos: []tour.Repo{
+			{Name: "worker", Remote: "git@github.com:acme/worker.git"},
+			{Name: "api", Remote: "git@github.com:acme/api.git"},
+		}}
+
+		test.Eq(t, "api", w.Home(t.Context(), tr))
+
+		tr.Repos = tr.Repos[:1]
+		test.Eq(t, "", w.Home(t.Context(), tr))
+
+		tr.Root = t.TempDir()
+		test.Eq(t, "", w.Home(t.Context(), tr))
+	})
+}

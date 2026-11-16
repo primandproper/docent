@@ -27,6 +27,7 @@ declare global {
     /** The recorded answers. Tests edit this, then call docentChanged, to stand in for a file changing. */
     docentFixture?: Fixture;
     docentChanged: () => void;
+    docentLaunch?: { tour: string; step: string };
   }
 }
 
@@ -129,6 +130,13 @@ export const backend: Api = {
   copy: async (text) => {
     window.copied.push(text);
   },
+  // Tests set window.docentLaunch before the app starts to stand in for `docent open`.
+  launch: async () => window.docentLaunch ?? { tour: '', step: '' },
+  chooseFolder: async () => {
+    window.gitActions.push('choose-folder');
+    return (await fixture()).workspace;
+  },
+  onOpen: () => () => undefined,
   onChanged: (callback) => {
     listeners.add(callback);
     return () => listeners.delete(callback);

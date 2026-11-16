@@ -85,6 +85,12 @@ lint: golang_lint shellcheck lint_frontend
 bindings:
 	$(WAILS) task common:generate:bindings
 
+# skill regenerates the agent skill and the AGENTS.md snippet from the
+# authoring guide in internal/guide. Commit the output.
+.PHONY: skill
+skill:
+	go run ./cmd/tools/skill skill
+
 ## TESTING
 
 .PHONY: test_golang

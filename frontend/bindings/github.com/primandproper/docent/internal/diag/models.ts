@@ -138,6 +138,13 @@ export enum Code {
     CodeStepLinkUnknown = "step-link-unknown",
 
     /**
+     * CodeTourMisplaced: a tour that lives inside one of the repos it
+     * describes also anchors into others, so anyone who has only that repo
+     * sees half a story.
+     */
+    CodeTourMisplaced = "tour-misplaced",
+
+    /**
      * CodeBodyMissing: a step's `body` file doesn't exist or can't be read.
      */
     CodeBodyMissing = "body-missing",

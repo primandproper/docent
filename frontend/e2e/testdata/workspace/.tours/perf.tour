@@ -1,0 +1,9 @@
+{
+  "title": "A very long file",
+  "description": "A 20,000-line file, for the performance checks. The file is generated when the fixture is built.",
+  "steps": [
+    { "title": "Deep in the file", "description": "d", "file": "big/huge.go", "line": 15000 },
+    { "title": "Near the top", "description": "d", "file": "big/huge.go", "line": 40 },
+    { "title": "Somewhere else", "description": "d", "file": "api/internal/http/items.go", "line": 9 }
+  ]
+}

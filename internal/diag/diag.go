@@ -71,6 +71,10 @@ const (
 	// CodeStepLinkUnknown: a docent:step link, or a visual's `step`, names a
 	// step the tour doesn't have.
 	CodeStepLinkUnknown Code = "step-link-unknown"
+	// CodeTourMisplaced: a tour that lives inside one of the repos it
+	// describes also anchors into others, so anyone who has only that repo
+	// sees half a story.
+	CodeTourMisplaced Code = "tour-misplaced"
 	// CodeBodyMissing: a step's `body` file doesn't exist or can't be read.
 	CodeBodyMissing Code = "body-missing"
 	// CodeLinkVarUnresolved: a link uses a {{variable}} nothing gives a value for.

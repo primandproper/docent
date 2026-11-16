@@ -251,3 +251,33 @@ func TestValidator_ExtraAnchors(T *testing.T) {
 		test.StrContains(t, diags[0].Message, `anchor "test": `)
 	})
 }
+
+func TestPlacement(T *testing.T) {
+	T.Parallel()
+
+	tr := &tour.Tour{Path: "/r/.tours/t.tour", Steps: []tour.Step{
+		{Repo: "api"},
+		{Repo: "worker", Anchors: []tour.Anchor{{Repo: "billing"}, {Repo: "api"}}},
+		{},
+	}}
+
+	T.Run("a tour inside one of its repos that reaches into others is warned about, once", func(t *testing.T) {
+		t.Parallel()
+
+		d, misplaced := placement(tr, "api")
+		must.True(t, misplaced)
+		test.Eq(t, diag.CodeTourMisplaced, d.Code)
+		test.Eq(t, diag.SeverityWarning, d.Severity)
+		test.StrContains(t, d.Message, "lives in the api repo but also anchors into worker, billing")
+	})
+
+	T.Run("a tours repo, or a tour that stays in its own repo, is fine", func(t *testing.T) {
+		t.Parallel()
+
+		_, misplaced := placement(tr, "")
+		test.False(t, misplaced)
+
+		_, misplaced = placement(&tour.Tour{Steps: []tour.Step{{Repo: "api"}, {}}}, "api")
+		test.False(t, misplaced)
+	})
+}

@@ -121,7 +121,7 @@ func (a *application) tourPaths(ctx context.Context, arg string) (*core.Core, []
 	}
 
 	if !info.IsDir() {
-		services, coreErr := a.coreFor(tour.RootFor(abs), nil)
+		services, coreErr := a.coreFor(tour.RootFor(abs))
 		if coreErr != nil {
 			return nil, nil, coreErr
 		}
@@ -129,7 +129,7 @@ func (a *application) tourPaths(ctx context.Context, arg string) (*core.Core, []
 		return services, []string{abs}, nil
 	}
 
-	services, err := a.coreFor(abs, nil)
+	services, err := a.coreFor(abs)
 	if err != nil {
 		return nil, nil, err
 	}

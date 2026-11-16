@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -561,5 +564,115 @@ func TestService_Browse(T *testing.T) {
 
 		_, err = s.Browse(t.Context(), mainTour, 0, 3, "")
 		test.ErrorIs(t, err, ErrNotAFile)
+	})
+}
+
+func TestService_Launch(T *testing.T) {
+	T.Parallel()
+
+	// A real folder with one tour, and a service that starts with no folder.
+	setup := func(t *testing.T) (svc *Service, tourPath string, rooted *[]string) {
+		t.Helper()
+
+		dir, err := filepath.EvalSymlinks(t.TempDir())
+		must.NoError(t, err)
+
+		tourPath = filepath.Join(dir, ".tours", "a.tour")
+		must.NoError(t, os.MkdirAll(filepath.Dir(tourPath), 0o750))
+		must.NoError(t, os.WriteFile(tourPath, []byte(`{"title": "A", "steps": [{"description": "d"}]}`), 0o600))
+
+		rebuild := func(root string) (*core.Core, error) {
+			return core.New(&core.Options{Root: root, UserConfigPath: filepath.Join(dir, "no-config.json")})
+		}
+
+		empty, err := rebuild("")
+		must.NoError(t, err)
+
+		svc = NewService("", empty, &fakeLauncher{}, nil, nil)
+		t.Cleanup(func() { svc.svc().Close() })
+
+		var seen []string
+
+		svc.setHost(&Host{
+			Rebuild:      rebuild,
+			ChooseFolder: func() (string, error) { return dir, nil },
+			Rooted:       func(root string, _ *core.Core) { seen = append(seen, root) },
+		})
+
+		return svc, tourPath, &seen
+	}
+
+	T.Run("with no folder there is no workspace and no tours", func(t *testing.T) {
+		t.Parallel()
+
+		svc, _, _ := setup(t)
+		test.Eq(t, Workspace{}, svc.Workspace())
+
+		tours, err := svc.ListTours(t.Context())
+		must.NoError(t, err)
+		test.Len(t, 0, tours)
+	})
+
+	T.Run("choosing a folder opens it", func(t *testing.T) {
+		t.Parallel()
+
+		svc, tourPath, rooted := setup(t)
+
+		ws, err := svc.ChooseFolder(t.Context())
+		must.NoError(t, err)
+		test.Eq(t, filepath.Dir(filepath.Dir(tourPath)), ws.Root)
+		test.Eq(t, []string{ws.Root}, *rooted)
+
+		tours, err := svc.ListTours(t.Context())
+		must.NoError(t, err)
+		must.Len(t, 1, tours)
+		test.Eq(t, tourPath, tours[0].Path)
+	})
+
+	T.Run("a docent link moves to the tour's folder and queues it, once", func(t *testing.T) {
+		t.Parallel()
+
+		svc, tourPath, rooted := setup(t)
+
+		must.NoError(t, svc.openLink(t.Context(), "docent://open?tour="+url.QueryEscape(tourPath)+"&step=intro"))
+		test.Len(t, 1, *rooted)
+		test.Eq(t, LaunchRequest{Tour: tourPath, Step: "intro"}, svc.Launch())
+		test.Eq(t, LaunchRequest{}, svc.Launch())
+
+		// Already in that folder: nothing moves.
+		must.NoError(t, svc.openLink(t.Context(), "docent://open?tour="+url.QueryEscape(tourPath)))
+		test.Len(t, 1, *rooted)
+		test.Eq(t, LaunchRequest{Tour: tourPath}, svc.Launch())
+	})
+
+	T.Run("links that aren't a tour on disk are refused", func(t *testing.T) {
+		t.Parallel()
+
+		svc, tourPath, rooted := setup(t)
+
+		for _, bad := range []string{
+			"docent://open",
+			"docent://open?tour=relative.tour",
+			"docent://open?tour=/etc/passwd",
+			"docent://open?tour=" + url.QueryEscape(tourPath+".gone.tour"),
+			"docent://run?tour=" + url.QueryEscape(tourPath),
+			"https://open?tour=" + url.QueryEscape(tourPath),
+			"docent://open?tour=" + url.QueryEscape(filepath.Dir(tourPath)),
+		} {
+			test.ErrorIs(t, svc.openLink(t.Context(), bad), ErrBadLink, test.Sprint(bad))
+		}
+
+		test.Len(t, 0, *rooted)
+		test.Eq(t, LaunchRequest{}, svc.Launch())
+	})
+
+	T.Run("without a host the folder can't change", func(t *testing.T) {
+		t.Parallel()
+
+		s := newService()
+
+		_, err := s.ChooseFolder(t.Context())
+		test.ErrorIs(t, err, ErrNoHost)
+		test.ErrorIs(t, s.requestTour(t.Context(), "/elsewhere/.tours/x.tour", ""), ErrNoHost)
 	})
 }

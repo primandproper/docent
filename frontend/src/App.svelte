@@ -20,6 +20,8 @@
     if (event.metaKey && !event.shiftKey && !event.altKey && !event.ctrlKey) {
       if (event.key === 'r') {
         void session.reload();
+      } else if (event.key === 'o') {
+        void session.chooseFolder();
       } else if (event.key === '[') {
         void session.back();
       } else if (event.key === ']') {

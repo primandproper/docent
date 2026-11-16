@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -48,6 +50,10 @@ var (
 	ErrTourUnreadable = errors.New("tour could not be read")
 	// ErrNotAFile is returned when a step with no file is asked to open in an editor.
 	ErrNotAFile = errors.New("this step doesn't point at a file")
+	// ErrNoHost is returned when the folder can't be changed from here.
+	ErrNoHost = errors.New("the folder can't be changed from inside the app")
+	// ErrBadLink is returned for a docent:// link that isn't one Docent understands.
+	ErrBadLink = errors.New("not a docent link")
 	// ErrNotCloneable is returned for a repo that is already here, or whose
 	// remote isn't a plain https or ssh git URL.
 	ErrNotCloneable = errors.New("this repo can't be cloned from the app")
@@ -191,9 +197,33 @@ type (
 	}
 
 	// Service is the API the frontend calls.
+	// LaunchRequest is a tour the app was asked to open from outside: by
+	// `docent open`, or by a docent:// link.
+	LaunchRequest struct {
+		_ struct{} `json:"-"`
+		// Tour is the tour's path, or "" when there is nothing to open.
+		Tour string `json:"tour"`
+		// Step is the id (or 1-based number) of the step to start at, or "".
+		Step string `json:"step"`
+	}
+
+	// Host is what the service needs from the desktop shell around it.
+	Host struct {
+		_ struct{}
+		// Rebuild assembles the services for a different folder.
+		Rebuild func(root string) (*core.Core, error)
+		// ChooseFolder asks the reader to pick a folder. "" means they cancelled.
+		ChooseFolder func() (string, error)
+		// Rooted is told when the folder changes, to move the file watcher
+		// and retitle the window.
+		Rooted func(root string, services *core.Core)
+	}
+
 	Service struct {
 		_        struct{}
 		core     *core.Core
+		host     *Host
+		pending  LaunchRequest
 		launcher editor.Launcher
 		logger   logging.Logger
 		tracer   tracing.Tracer
@@ -218,13 +248,181 @@ func NewService(root string, services *core.Core, launcher editor.Launcher, logg
 	}
 }
 
+// svc returns the services for the folder currently open.
+func (s *Service) svc() *core.Core {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.core
+}
+
+// setHost connects the service to the desktop shell. Without one, the folder
+// can't be changed from inside the app. It and the other unexported methods
+// below are unexported on purpose: every exported method of Service is
+// callable from the webview.
+func (s *Service) setHost(host *Host) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.host = host
+}
+
+// request queues a tour to open, for the frontend to pick up with Launch.
+func (s *Service) request(request LaunchRequest) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.pending = request
+}
+
+// Launch hands over the tour the app was asked to open from outside, once.
+func (s *Service) Launch() LaunchRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	request := s.pending
+	s.pending = LaunchRequest{}
+
+	return request
+}
+
+// reroot points the service at a different folder.
+func (s *Service) reroot(root string) error {
+	s.mu.Lock()
+	host := s.host
+	s.mu.Unlock()
+
+	if host == nil || host.Rebuild == nil {
+		return ErrNoHost
+	}
+
+	services, err := host.Rebuild(root)
+	if err != nil {
+		return fmt.Errorf("opening %s: %w", root, err)
+	}
+
+	s.mu.Lock()
+	previous := s.core
+	s.core, s.root = services, root
+	s.open = map[string]*tour.Tour{}
+	s.known = nil
+	s.mu.Unlock()
+
+	if previous != nil {
+		previous.Close()
+	}
+
+	if host.Rooted != nil {
+		host.Rooted(root, services)
+	}
+
+	s.logger.WithValue("root", root).Info("opened folder")
+
+	return nil
+}
+
+// ChooseFolder asks the reader for a folder and opens it. It returns the
+// workspace as it now is, which is unchanged if they cancelled.
+func (s *Service) ChooseFolder(ctx context.Context) (Workspace, error) {
+	_, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	s.mu.Lock()
+	host := s.host
+	s.mu.Unlock()
+
+	if host == nil || host.ChooseFolder == nil {
+		return s.Workspace(), observability.PrepareAndLogError(ErrNoHost, s.logger, span, "choosing a folder")
+	}
+
+	chosen, err := host.ChooseFolder()
+	if err != nil {
+		return s.Workspace(), observability.PrepareAndLogError(err, s.logger, span, "choosing a folder")
+	}
+
+	if chosen == "" {
+		return s.Workspace(), nil
+	}
+
+	if err = s.reroot(chosen); err != nil {
+		return s.Workspace(), observability.PrepareAndLogError(err, s.logger, span, "opening the chosen folder")
+	}
+
+	return s.Workspace(), nil
+}
+
+// openLink handles a docent://open link, which names a tour and a step in its query. The link is untrusted:
+// all it can do is make the app open a .tour file that exists, which is no
+// more than the reader could do by opening the folder it is in.
+func (s *Service) openLink(ctx context.Context, link string) error {
+	parsed, err := url.Parse(link)
+	if err != nil || parsed.Scheme != "docent" || parsed.Host != "open" {
+		return fmt.Errorf("%q: %w", link, ErrBadLink)
+	}
+
+	tourPath := parsed.Query().Get("tour")
+	if tourPath == "" || !filepath.IsAbs(tourPath) || filepath.Ext(tourPath) != tour.Extension {
+		return fmt.Errorf("%q: the tour must be an absolute path to a .tour file: %w", link, ErrBadLink)
+	}
+
+	tourPath = filepath.Clean(tourPath)
+
+	if info, statErr := os.Stat(tourPath); statErr != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("%q: no such tour: %w", link, ErrBadLink)
+	}
+
+	return s.requestTour(ctx, tourPath, parsed.Query().Get("step"))
+}
+
+// requestTour queues a tour to open, first moving to its folder if it isn't
+// one of this workspace's tours.
+func (s *Service) requestTour(ctx context.Context, tourPath, step string) error {
+	s.mu.Lock()
+	root := s.root
+	s.mu.Unlock()
+
+	known := false
+
+	if root != "" {
+		if paths, err := s.discover(ctx); err == nil {
+			known = slices.Contains(paths, tourPath)
+		}
+	}
+
+	if !known {
+		if err := s.reroot(tour.RootFor(tourPath)); err != nil {
+			return err
+		}
+	}
+
+	s.request(LaunchRequest{Tour: tourPath, Step: step})
+
+	return nil
+}
+
 // discover lists the workspace's tours, including the configured tour paths.
 func (s *Service) discover(ctx context.Context) ([]string, error) {
-	return s.core.Store.Discover(ctx, s.root, s.core.Config.TourPaths()...)
+	s.mu.Lock()
+	root, services := s.root, s.core
+	s.mu.Unlock()
+
+	if root == "" {
+		return nil, nil
+	}
+
+	return services.Store.Discover(ctx, root, services.Config.TourPaths()...)
 }
 
 // Workspace reports the folder the app was opened on.
 func (s *Service) Workspace() Workspace {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// No root means the app was launched without a folder (from Finder).
+	if s.root == "" {
+		return Workspace{}
+	}
+
 	return Workspace{Root: s.root, Name: filepath.Base(s.root)}
 }
 
@@ -235,7 +433,7 @@ func (s *Service) ListTours(ctx context.Context) ([]TourSummary, error) {
 
 	// Listing is what a reload does first, so this is where a fetch or a new
 	// commit since the last look gets noticed.
-	s.core.Walker.Reset()
+	s.svc().Walker.Reset()
 
 	paths, err := s.discover(ctx)
 	if err != nil {
@@ -277,11 +475,11 @@ func (s *Service) ListTours(ctx context.Context) ([]TourSummary, error) {
 func (s *Service) summarize(ctx context.Context, path string) (TourSummary, error) {
 	summary := TourSummary{Path: path, DisplayPath: path, Tags: []string{}, Repos: []string{}}
 
-	if rel, err := filepath.Rel(s.root, path); err == nil && filepath.IsLocal(rel) {
+	if rel, err := filepath.Rel(s.Workspace().Root, path); err == nil && filepath.IsLocal(rel) {
 		summary.DisplayPath = rel
 	}
 
-	diags, err := s.core.Validator.Tour(ctx, path)
+	diags, err := s.svc().Validator.Tour(ctx, path)
 	if err != nil {
 		return summary, fmt.Errorf("validating tour: %w", err)
 	}
@@ -294,7 +492,7 @@ func (s *Service) summarize(ctx context.Context, path string) (TourSummary, erro
 		}
 	}
 
-	t, _, err := s.core.Store.Load(ctx, path)
+	t, _, err := s.svc().Store.Load(ctx, path)
 	if err != nil {
 		return summary, fmt.Errorf("loading tour: %w", err)
 	}
@@ -334,7 +532,7 @@ func (s *Service) OpenTour(ctx context.Context, path string) (*TourView, error) 
 		return nil, observability.PrepareAndLogError(err, logger, span, "opening tour")
 	}
 
-	t, diags, err := s.core.Store.Load(ctx, path)
+	t, diags, err := s.svc().Store.Load(ctx, path)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "loading tour")
 	}
@@ -357,12 +555,12 @@ func (s *Service) OpenTour(ctx context.Context, path string) (*TourView, error) 
 		Repos: make([]walk.RepoState, 0, len(t.Repos)), WorkingTree: workingTree,
 	}
 
-	if m := s.core.Walker.Map(ctx, t); m != nil {
+	if m := s.svc().Walker.Map(ctx, t); m != nil {
 		view.Map, view.MapProblem = m.Source, m.Detail
 	}
 
 	for i := range t.Repos {
-		state, repoErr := s.core.Walker.Repo(ctx, t, t.Repos[i].Name)
+		state, repoErr := s.svc().Walker.Repo(ctx, t, t.Repos[i].Name)
 		if repoErr != nil {
 			return nil, observability.PrepareAndLogError(repoErr, logger, span, "inspecting repo %s", t.Repos[i].Name)
 		}
@@ -375,7 +573,7 @@ func (s *Service) OpenTour(ctx context.Context, path string) (*TourView, error) 
 	}
 
 	for i := range t.Steps {
-		step, stepErr := s.core.Walker.Step(ctx, t, i)
+		step, stepErr := s.svc().Walker.Step(ctx, t, i)
 		if stepErr != nil {
 			return nil, observability.PrepareAndLogError(stepErr, logger, span, "resolving step %d", i)
 		}
@@ -408,7 +606,7 @@ func (s *Service) Step(ctx context.Context, path string, index int) (*StepView, 
 		return nil, observability.PrepareAndLogError(fmt.Errorf("%q is not open: %w", path, ErrUnknownTour), logger, span, "resolving step")
 	}
 
-	step, err := s.core.Walker.Step(ctx, t, index)
+	step, err := s.svc().Walker.Step(ctx, t, index)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "resolving step")
 	}
@@ -530,7 +728,7 @@ func (s *Service) vars(t *tour.Tour) []VarView {
 
 	for i := range t.Vars {
 		v := &t.Vars[i]
-		value, source, _ := s.core.Vars.Lookup(v.Name, t.Vars)
+		value, source, _ := s.svc().Vars.Lookup(v.Name, t.Vars)
 
 		choices := v.Choices
 		if choices == nil {
@@ -582,7 +780,7 @@ func (s *Service) SetVar(ctx context.Context, path, name, value string) ([]VarVi
 		return nil, observability.PrepareAndLogError(fmt.Errorf("%q for %q: %w", value, name, ErrBadVariable), logger, span, "setting variable")
 	}
 
-	s.core.Vars.Pick(name, value)
+	s.svc().Vars.Pick(name, value)
 
 	return s.vars(t), nil
 }
@@ -614,7 +812,7 @@ func (s *Service) OpenInEditor(ctx context.Context, path string, index, extra in
 		return nil, observability.PrepareAndLogError(fmt.Errorf("%q is not open: %w", path, ErrUnknownTour), logger, span, "opening in editor")
 	}
 
-	step, err := s.core.Walker.Step(ctx, t, index)
+	step, err := s.svc().Walker.Step(ctx, t, index)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "resolving step")
 	}
@@ -670,7 +868,7 @@ func shellJoin(argv []string) string {
 // permalink builds the GitHub link for a step's anchored lines, at the commit
 // being read (HEAD when reading the working tree).
 func (s *Service) permalink(ctx context.Context, t *tour.Tour, step *walk.Step) string {
-	if s.core.Git == nil || (step.Kind != walk.KindFile && step.Kind != walk.KindDirectory) || step.Path == "" {
+	if s.svc().Git == nil || (step.Kind != walk.KindFile && step.Kind != walk.KindDirectory) || step.Path == "" {
 		return ""
 	}
 
@@ -678,12 +876,12 @@ func (s *Service) permalink(ctx context.Context, t *tour.Tour, step *walk.Step) 
 		return ""
 	}
 
-	_, prefix, err := s.core.Git.Locate(ctx, step.Root)
+	_, prefix, err := s.svc().Git.Locate(ctx, step.Root)
 	if err != nil {
 		return ""
 	}
 
-	remote := s.core.Git.Origin(ctx, step.Root)
+	remote := s.svc().Git.Origin(ctx, step.Root)
 
 	for i := range t.Repos {
 		if t.Repos[i].Name == step.Repo {
@@ -697,7 +895,7 @@ func (s *Service) permalink(ctx context.Context, t *tour.Tour, step *walk.Step) 
 	}
 
 	if sha == "" {
-		if sha, err = s.core.Git.Commit(ctx, step.Root, "HEAD"); err != nil {
+		if sha, err = s.svc().Git.Commit(ctx, step.Root, "HEAD"); err != nil {
 			return ""
 		}
 	}
@@ -717,7 +915,7 @@ func (s *Service) SetWorkingTree(on bool) {
 	s.workingTree = on
 	s.mu.Unlock()
 
-	s.core.Walker.SetWorkingTree(on)
+	s.svc().Walker.SetWorkingTree(on)
 	s.logger.WithValue("working_tree", on).Info("switched what is read")
 }
 
@@ -731,7 +929,7 @@ func (s *Service) repoState(ctx context.Context, path, name string) (*walk.RepoS
 		return nil, fmt.Errorf("%q is not open: %w", path, ErrUnknownTour)
 	}
 
-	state, err := s.core.Walker.Repo(ctx, t, name)
+	state, err := s.svc().Walker.Repo(ctx, t, name)
 	if err != nil {
 		return nil, err
 	}
@@ -757,11 +955,11 @@ func (s *Service) Fetch(ctx context.Context, path, repo string) error {
 		return observability.PrepareAndLogError(fmt.Errorf("repo %q: %w", repo, walk.ErrNoSuchRepo), logger, span, "fetching")
 	}
 
-	if err = s.core.Git.Fetch(ctx, state.Root); err != nil {
+	if err = s.svc().Git.Fetch(ctx, state.Root); err != nil {
 		return observability.PrepareAndLogError(err, logger, span, "fetching")
 	}
 
-	s.core.Walker.Reset()
+	s.svc().Walker.Reset()
 	logger.Info("fetched repo")
 
 	return nil
@@ -786,11 +984,11 @@ func (s *Service) Clone(ctx context.Context, path, repo string) error {
 		return observability.PrepareAndLogError(fmt.Errorf("repo %q: %w", repo, ErrNotCloneable), logger, span, "cloning")
 	}
 
-	if err = s.core.Git.Clone(ctx, state.Remote, state.CloneCommand[3]); err != nil {
+	if err = s.svc().Git.Clone(ctx, state.Remote, state.CloneCommand[3]); err != nil {
 		return observability.PrepareAndLogError(err, logger, span, "cloning")
 	}
 
-	s.core.Walker.Reset()
+	s.svc().Walker.Reset()
 	logger.WithValue("dest", state.CloneCommand[3]).Info("cloned repo")
 
 	return nil
@@ -853,7 +1051,7 @@ func (s *Service) ExpandLinks(ctx context.Context, path, body string) ([]links.C
 
 	cards := make([]links.Card, 0, len(fenced))
 	for i := range fenced {
-		cards = append(cards, s.core.Vars.Expand(&fenced[i], t.Vars))
+		cards = append(cards, s.svc().Vars.Expand(&fenced[i], t.Vars))
 	}
 
 	return cards, nil
@@ -870,7 +1068,7 @@ func (s *Service) browseRoot(ctx context.Context, path string, index, extra int)
 		return nil, fmt.Errorf("%q is not open: %w", path, ErrUnknownTour)
 	}
 
-	step, err := s.core.Walker.Step(ctx, t, index)
+	step, err := s.svc().Walker.Step(ctx, t, index)
 	if err != nil {
 		return nil, err
 	}
@@ -904,7 +1102,7 @@ func (s *Service) Browse(ctx context.Context, path string, index, extra int, dir
 		return nil, observability.PrepareAndLogError(err, logger, span, "browsing")
 	}
 
-	entries, err := s.core.Source.ReadDir(ctx, step.Root, step.Ref.Commit, dir)
+	entries, err := s.svc().Source.ReadDir(ctx, step.Root, step.Ref.Commit, dir)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "listing directory")
 	}
@@ -929,7 +1127,7 @@ func (s *Service) BrowseFile(ctx context.Context, path string, index, extra int,
 		return nil, observability.PrepareAndLogError(err, logger, span, "browsing")
 	}
 
-	content, err := s.core.Source.ReadFile(ctx, step.Root, step.Ref.Commit, file)
+	content, err := s.svc().Source.ReadFile(ctx, step.Root, step.Ref.Commit, file)
 	if err != nil {
 		return nil, observability.PrepareAndLogError(err, logger, span, "reading file")
 	}

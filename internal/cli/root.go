@@ -16,6 +16,8 @@ import (
 	"github.com/primandproper/docent/internal/app"
 	"github.com/primandproper/docent/internal/core"
 	"github.com/primandproper/docent/internal/logs"
+	"github.com/primandproper/docent/internal/tour"
+	"github.com/primandproper/docent/internal/version"
 
 	"github.com/primandproper/primitives-go/v2/observability/logging"
 	"github.com/primandproper/primitives-go/v2/observability/tracing"
@@ -127,6 +129,7 @@ func (a *application) newRootCommand() *cobra.Command {
 		Long: "Docent opens a window for walking the tours found under a folder (default: the\n" +
 			"current one). Subcommands run headless.",
 		Args:          cobra.MaximumNArgs(1),
+		Version:       version.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(*cobra.Command, []string) {
@@ -147,6 +150,7 @@ func (a *application) newRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&logLevel, "log-level", envOr(LogLevelEnvVar, string(logging.InfoLevel)), "log level: debug, info, warn or error")
 
 	root.AddCommand(
+		a.newOpenCommand(),
 		a.newValidateCommand(),
 		a.newResolveCommand(),
 		a.newNewCommand(),
@@ -156,6 +160,7 @@ func (a *application) newRootCommand() *cobra.Command {
 		a.newStaleCommand(),
 		a.newSchemaCommand(),
 		a.newGuideCommand(),
+		a.newDoctorCommand(),
 	)
 
 	return root
@@ -217,16 +222,62 @@ func (a *application) open(ctx context.Context, args []string, vars map[string]s
 		return fmt.Errorf("%q is not a folder and not a docent command; run `docent --help` for the commands", path)
 	}
 
-	a.log().WithValue("root", root).Info("opening app")
+	// Launched from Finder there is no folder: the working directory is the
+	// filesystem root, which nobody means. The app starts empty and asks.
+	if len(args) == 0 && root == filepath.Dir(root) {
+		root = ""
+	}
 
-	return app.Run(ctx, &app.Options{
-		Root:           root,
-		VarFlags:       vars,
-		Assets:         a.assets,
-		Logger:         a.log(),
-		SystemLogger:   a.systemLogger,
-		TracerProvider: a.tracerProvider,
-	})
+	return a.runApp(ctx, &app.Options{Root: root, VarFlags: vars})
+}
+
+// runApp starts the desktop app.
+func (a *application) runApp(ctx context.Context, opts *app.Options) error {
+	opts.Assets = a.assets
+	opts.Logger = a.log()
+	opts.SystemLogger = a.systemLogger
+	opts.TracerProvider = a.tracerProvider
+
+	a.log().WithValues(map[string]any{"root": opts.Root, "tour": opts.Tour}).Info("opening app")
+
+	return app.Run(ctx, opts)
+}
+
+func (a *application) newOpenCommand() *cobra.Command {
+	var (
+		step     string
+		varFlags []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "open <tour>",
+		Short: "Open the app on one tour, optionally at a step.",
+		Long: "Open starts the app in the tour's folder with that tour open. A link of the form\n" +
+			"docent://open?tour=<absolute path>&step=<id> does the same from anywhere.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			vars, err := parseVars(varFlags)
+			if err != nil {
+				return err
+			}
+
+			abs, err := filepath.Abs(args[0])
+			if err != nil {
+				return fmt.Errorf("resolving %q: %w", args[0], err)
+			}
+
+			if info, statErr := os.Stat(abs); statErr != nil || !info.Mode().IsRegular() {
+				return fmt.Errorf("%q is not a tour file", args[0])
+			}
+
+			return a.runApp(cmd.Context(), &app.Options{Root: tour.RootFor(abs), Tour: abs, Step: step, VarFlags: vars})
+		},
+	}
+
+	cmd.Flags().StringVar(&step, "step", "", "the step to start at: its id, or its number counting from 1")
+	cmd.Flags().StringArrayVar(&varFlags, "var", nil, "set a link variable, as name=value (repeatable)")
+
+	return cmd
 }
 
 func envOr(name, fallback string) string {
@@ -254,10 +305,9 @@ func parseVars(flags []string) (map[string]string, error) {
 }
 
 // coreFor assembles the services for a folder.
-func (a *application) coreFor(root string, vars map[string]string) (*core.Core, error) {
+func (a *application) coreFor(root string) (*core.Core, error) {
 	return core.New(&core.Options{
 		Root:           root,
-		VarFlags:       vars,
 		UserConfigPath: a.userConfigPath,
 		Logger:         a.log(),
 		TracerProvider: a.tracerProvider,

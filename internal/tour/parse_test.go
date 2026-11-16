@@ -201,7 +201,8 @@ func TestParse(T *testing.T) {
 			pointers[i] = diags[i].Pointer
 		}
 
-		test.SliceContainsAll(t, pointers, []string{"/tags", "/steps/0/links/0/kind"})
-		test.Eq(t, "a", diags[len(diags)-1].Step)
+		test.Eq(t, []string{"/steps/0/links/0/kind", "/tags"}, pointers)
+		test.Eq(t, "a", diags[0].Step)
+		test.Eq(t, "", diags[1].Step)
 	})
 }

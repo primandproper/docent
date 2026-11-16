@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/primandproper/docent/internal/diag"
@@ -85,6 +87,12 @@ func validateSchema(file string, doc *orderedjson.Value) ([]diag.Diagnostic, err
 		})
 	}
 	walk(verr)
+
+	// The schema library walks maps, so its order varies from run to run.
+	// Diagnostics are a contract; they come out in document order.
+	slices.SortStableFunc(out, func(a, b diag.Diagnostic) int {
+		return strings.Compare(a.Pointer, b.Pointer)
+	})
 
 	return out, nil
 }

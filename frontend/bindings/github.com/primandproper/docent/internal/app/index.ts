@@ -9,6 +9,7 @@ export {
 export type {
     AnchorView,
     FileView,
+    LaunchRequest,
     StepSummary,
     StepView,
     TourSummary,

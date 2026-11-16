@@ -28,6 +28,10 @@ export const backend: Api = {
   browse: async (path, index, extra, dir) => (await Service.Browse(path, index, extra, dir)) ?? [],
   browseFile: async (path, index, extra, file) => required(await Service.BrowseFile(path, index, extra, file), 'file'),
   copy: (text) => Clipboard.SetText(text),
+  launch: () => Service.Launch(),
+  chooseFolder: () => Service.ChooseFolder(),
+  // Must match app.OpenEvent in Go.
+  onOpen: (callback) => Events.On('docent:open' as never, callback),
   // Must match app.ChangedEvent in Go.
   onChanged: (callback) => Events.On('docent:changed' as never, callback),
   openExternal: async (url) => {

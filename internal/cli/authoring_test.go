@@ -260,3 +260,37 @@ func indexOf(s, sub string) int {
 func indexAfter(s, sub string) int {
 	return indexOf(s, sub) + len(sub)
 }
+
+func TestDoctor(T *testing.T) {
+	T.Parallel()
+
+	T.Run("describes the config, the editors and each tour's repos", func(t *testing.T) {
+		t.Parallel()
+
+		top, tourPath := crossRepoWorkspace(t, true)
+
+		code, stdout, stderr := run(t, "doctor", filepath.Join(top, "team-tours"))
+		must.Eq(t, ExitClean, code, must.Sprint(stderr))
+
+		for _, want := range []string{
+			"version          dev",
+			"workspace file   " + filepath.Join(top, "docent.json"),
+			"config.json (not present)",
+			tourPath,
+			"api          " + filepath.Join(top, "api") + " (by convention), reading the working tree",
+			"worker       " + filepath.Join(top, "elsewhere", "worker-svc") + " (by workspace-mapping)",
+			"git              ",
+			"webview          WebKit ",
+		} {
+			test.StrContains(t, stdout, want)
+		}
+	})
+
+	T.Run("still reports on a folder with no tours", func(t *testing.T) {
+		t.Parallel()
+
+		code, stdout, _ := run(t, "doctor", t.TempDir())
+		test.Eq(t, ExitClean, code)
+		test.StrContains(t, stdout, "none found")
+	})
+}

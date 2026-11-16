@@ -109,7 +109,7 @@ func run(ctx context.Context, testdata, output string) error {
 		out.Files[path] = map[string]*app.FileView{}
 
 		for index, step := range steps {
-			if step.Kind == "file" && step.Content != "" {
+			if step.Kind == "file" && step.Content != "" && len(step.Content) < 100_000 {
 				if err = recordTree(ctx, service, path, index, "", out.Listings[path], out.Files[path]); err != nil {
 					return err
 				}
@@ -192,6 +192,28 @@ func build(ctx context.Context, testdata string) (string, error) {
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", fmt.Errorf("resolving %s: %w", root, err)
+	}
+
+	// A file long enough to show whether the code pane really only draws
+	// what is on screen. Generated here: nobody needs to review 20,000 lines.
+	var huge strings.Builder
+
+	huge.WriteString("package big\n\n")
+
+	for line := 3; line <= 20000; line++ {
+		if line%40 == 0 {
+			fmt.Fprintf(&huge, "func Generated%d() int { return %d }\n", line, line)
+		} else {
+			fmt.Fprintf(&huge, "// line %d of a very long file, with enough text on it to be worth highlighting\n", line)
+		}
+	}
+
+	if err = os.MkdirAll(filepath.Join(root, "big"), 0o750); err != nil {
+		return "", fmt.Errorf("creating the long file: %w", err)
+	}
+
+	if err = os.WriteFile(filepath.Join(root, "big", "huge.go"), []byte(huge.String()), 0o600); err != nil {
+		return "", fmt.Errorf("writing the long file: %w", err)
 	}
 
 	stamps := map[string]string{}

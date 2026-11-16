@@ -3,7 +3,7 @@ import type { FileView, StepView, TourSummary, TourView, VarView, Workspace } fr
 import { NavHistory } from './history';
 import { parseInternal } from './internal';
 import type { Place } from './history';
-import { positionAfterReload } from './steps';
+import { parseStepNumber, positionAfterReload } from './steps';
 
 /**
  * Everything the app is showing: the workspace, its tours, and the tour and
@@ -45,10 +45,49 @@ class Session {
       this.history.visit({ path: '', index: 0 });
       // Live reload: whoever is editing a tour sees it here as they save.
       api.onChanged(() => void this.reload());
+      // A docent:// link, now or later, opens its tour.
+      api.onOpen(() => void this.launch());
+      await this.launch();
     } catch (err) {
       this.error = errorMessage(err);
     } finally {
       this.loading = false;
+    }
+  }
+
+  /** Opens whatever tour the app was asked for from outside, at the step asked for. */
+  private async launch(): Promise<void> {
+    const request = await api.launch();
+    if (!request.tour) {
+      return;
+    }
+    // A link may have moved the app to another folder.
+    this.workspace = await api.workspace();
+    await this.refreshTours();
+    await this.open(request.tour);
+
+    const steps = this.view?.tour?.steps ?? [];
+    const byID = steps.findIndex((step) => step.id !== '' && step.id === request.step);
+    const byNumber = parseStepNumber(request.step, steps.length);
+    const index = byID >= 0 ? byID : (byNumber ?? 0);
+    if (index > 0) {
+      await this.go(index);
+    }
+  }
+
+  /** Asks for a folder and opens it. */
+  async chooseFolder(): Promise<void> {
+    try {
+      const workspace = await api.chooseFolder();
+      if (workspace.root !== this.workspace?.root) {
+        this.workspace = workspace;
+        this.view = null;
+        this.step = null;
+        this.cache.clear();
+      }
+      await this.refreshTours();
+    } catch (err) {
+      this.error = errorMessage(err);
     }
   }
 

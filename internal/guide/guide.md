@@ -153,8 +153,8 @@ Clicking a node takes the reader to the first step that focuses it, so the map i
 
 ## Visuals
 
-Use a visual when order or timing is the point: an async hop, retries, a state changing. Use a Mermaid diagram (a
-```` ```mermaid ```` fence in a body) for structure that doesn't move. Don't decorate: a step that is clear from its
+Use a visual when order or timing is the point: an async hop, retries, a state changing. Use a Mermaid diagram (a fence
+named `mermaid` in a body) for structure that doesn't move. Don't decorate: a step that is clear from its
 code needs neither.
 
 Write a visual as a fence in a body file. The body of the fence is YAML.
