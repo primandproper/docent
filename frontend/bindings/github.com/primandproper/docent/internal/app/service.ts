@@ -91,6 +91,15 @@ export function ListTours(): $CancellablePromise<$models.TourSummary[] | null> {
 }
 
 /**
+ * MarkRead records that the reader has had a step of an open tour in front of
+ * them, and reports what a review still waits on. The frontend calls it once
+ * a step has been on screen for a moment, not as it is passed through.
+ */
+export function MarkRead(path: string, index: number): $CancellablePromise<$models.ReviewState | null> {
+    return $Call.ByID(356703457, path, index);
+}
+
+/**
  * OpenInEditor opens a file step of an open tour in an editor, at the line its
  * anchor resolved to. extra picks one of the step's extra anchors, or -1 for
  * its own file. editorID picks one from Editors; empty means whatever the
@@ -105,6 +114,17 @@ export function OpenInEditor(path: string, index: number, extra: number, editorI
  */
 export function OpenTour(path: string): $CancellablePromise<$models.TourView | null> {
     return $Call.ByID(1456785418, path);
+}
+
+/**
+ * Review vouches for an open tour in the reader's name: it appends a
+ * `reviewedBy` entry and stamps the tour, as `docent review` does. It is the
+ * only edit the app ever makes to a tour, the frontend calls it only once the
+ * reader has confirmed, and it refuses unless every step of the tour, as it
+ * is on disk now, has been read in this session.
+ */
+export function Review(path: string, name: string): $CancellablePromise<void> {
+    return $Call.ByID(2874889140, path, name);
 }
 
 /**

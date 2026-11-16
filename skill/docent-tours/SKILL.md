@@ -89,7 +89,7 @@ Run `docent schema` for the full JSON Schema.
 | `map` | The system map: `{ "file": "<slug>/map.mmd" }` (preferred) or `{ "mermaid": "..." }`. |
 | `tags` | Strings for filtering in the picker. |
 | `generatedBy` | Always set it: `{ "agent", "model"?, "at" }` with an RFC 3339 time. It marks the tour as an unreviewed draft. |
-| `reviewedBy` | Never set it. A person adds it after walking the tour. |
+| `reviewedBy` | Never set it. A person adds it after walking the tour, with **Mark reviewed** in the app or `docent review`. |
 | `nextTour` | The `title` of a tour to offer after the last step. |
 
 ### Step fields

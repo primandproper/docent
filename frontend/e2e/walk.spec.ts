@@ -641,3 +641,78 @@ test.describe('opening from outside', () => {
     expect(await page.evaluate(() => window.gitActions)).toEqual(['choose-folder']);
   });
 });
+
+test.describe('marking a tour reviewed', () => {
+  function mark(page: Page) {
+    return page.getByRole('button', { name: /Mark reviewed/ });
+  }
+
+  test('a plain CodeTour file has no review to give', async ({ page }) => {
+    await openMain(page);
+    await expect(mark(page)).toHaveCount(0);
+  });
+
+  test('is offered only once every step has stayed on screen', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Every kind of visual/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Every kind of visual' })).toBeVisible();
+
+    await expect(mark(page)).toHaveAttribute('aria-disabled', 'true');
+    await expect(mark(page)).toContainText('0/5 read');
+
+    // Passing through steps reads none of them.
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press('j');
+    }
+    await expect(currentStep(page)).toContainText('5');
+    await expect(mark(page)).toContainText('0/5 read');
+
+    // Asking early says what is missing, and asks for nothing. (Forced: the
+    // button is aria-disabled, which Playwright won't click but a reader can.)
+    await mark(page).click({ force: true });
+    await expect(page.getByRole('status')).toContainText('Read every step first.');
+    await expect(page.getByRole('form', { name: 'Mark reviewed' })).toHaveCount(0);
+
+    // Staying on each one does.
+    for (let read = 1; read < 5; read++) {
+      await expect(mark(page)).toContainText(`${read}/5 read`);
+      await page.keyboard.press('k');
+    }
+    await expect(mark(page)).toHaveAttribute('aria-disabled', 'false');
+    await expect(mark(page)).not.toContainText('read');
+    await expect(page.locator('.rail .number.read')).toHaveCount(5);
+    expect(await page.evaluate(() => window.reviewed)).toEqual([]);
+
+    // Even then it asks before it writes, offering git's name.
+    await mark(page).click();
+    const form = page.getByRole('form', { name: 'Mark reviewed' });
+    await expect(form.getByRole('textbox')).toHaveValue('Ada Reader');
+    await form.getByRole('button', { name: 'Cancel' }).click();
+    await expect(form).toHaveCount(0);
+    expect(await page.evaluate(() => window.reviewed)).toEqual([]);
+
+    await mark(page).click();
+    await form.getByRole('textbox').fill('Grace Walker');
+    await form.getByRole('button', { name: 'Sign and save' }).click();
+
+    await expect(page.locator('.bar')).toContainText('Reviewed by Grace Walker');
+    await expect(form).toHaveCount(0);
+    const reviewed = await page.evaluate(() => window.reviewed);
+    expect(reviewed).toHaveLength(1);
+    expect(reviewed[0]).toMatch(/^Grace Walker: .*visuals\.tour$/);
+
+    // The file changed, so vouching for it again means reading it again.
+    await expect(mark(page)).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  test('says what else is in the way, however much was read', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Reading an item/ }).click();
+    await expect(page.locator('.bar')).toContainText('Unreviewed draft');
+
+    await expect(mark(page)).toHaveAttribute('aria-disabled', 'true');
+    await mark(page).click({ force: true });
+    await expect(page.getByRole('status')).toContainText("The billing repo isn't checked out here.");
+    await expect(page.getByRole('form', { name: 'Mark reviewed' })).toHaveCount(0);
+  });
+});

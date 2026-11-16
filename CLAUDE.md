@@ -22,6 +22,8 @@ product design and the source of truth for what gets built; milestones M0 to M5 
   can't disagree.
 - `internal/mermaid`: a tolerant flowchart reader, only to check `mapFocus` ids.
 - `internal/visual`: validates animated visuals and scans Markdown for `docent-*` fences.
+- `internal/stamp`: `Apply` moves a tour's stamps and records a review. `docent stamp`, `docent review` and the
+  app's Mark reviewed button all go through it.
 - `internal/validate`: turns resolved steps into diagnostics.
 - `internal/workspace`: `docent.json` and the user config, and `RepoResolver`, which maps a tour's repos to local
   checkouts (mapping, then sibling folder, then origin URL).
@@ -66,8 +68,12 @@ make test_e2e ARGS=--ui # browser tests only
 
 - Every exported method of `app.Service` is callable from the webview. Anything the frontend must not be able to
   do (change folder without a dialog, queue a tour) stays unexported.
-- The app never writes tours or config. Its only writes are a `git fetch` or `git clone` the reader confirmed in
+- The app never writes config, and makes one edit to a tour: `Service.Review` appends a `reviewedBy` entry and
+  stamps it. Its other writes are a `git fetch` or `git clone`. All three happen only after the reader confirmed in
   the UI; a remote from a tour is checked by `cloneable` before git sees it.
+- A review is only accepted once every step was read in this run of the app. The frontend reports a step read after
+  it has stayed on screen (`READ_AFTER_MS`), but `Service` keeps the count and is what refuses: it resets when the
+  tour file changes or the working-tree toggle flips, and it is never saved.
 - A step's code is read at its ref's commit, never from the checkout, unless the working-tree toggle is on.
 - Mermaid and ELK are loaded on first use. Arrowheads in the visuals use explicit markers, not `context-stroke`,
   which WebKit doesn't support.

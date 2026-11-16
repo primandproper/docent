@@ -2,6 +2,7 @@
 // themselves live in ./backend, which browser tests swap for a recorded one.
 import type {
   FileView,
+  ReviewState,
   StepView,
   TourSummary,
   TourView,
@@ -16,6 +17,7 @@ import { backend } from './backend';
 export type {
   AnchorView,
   FileView,
+  ReviewState,
   StepSummary,
   StepView,
   TourSummary,
@@ -44,6 +46,13 @@ export interface Api {
   fetch(path: string, repo: string): Promise<void>;
   /** Clones one of the open tour's missing repos. Call only once the reader has agreed. */
   clone(path: string, repo: string): Promise<void>;
+  /** Records that a step has been in front of the reader; returns what a review still waits on. */
+  markRead(path: string, index: number): Promise<ReviewState>;
+  /**
+   * Signs the open tour as reviewed, which edits the tour file. Call only once the reader has
+   * agreed. Go refuses unless every step was read first.
+   */
+  review(path: string, name: string): Promise<void>;
   /** Turns the body of a docent-links fence into cards, with variables filled in. */
   expandLinks(path: string, body: string): Promise<Card[]>;
   editors(): Promise<Editor[]>;

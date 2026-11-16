@@ -1,9 +1,15 @@
 import { api, errorMessage } from './api';
-import type { FileView, StepView, TourSummary, TourView, VarView, Workspace } from './api';
+import type { FileView, ReviewState, StepView, TourSummary, TourView, VarView, Workspace } from './api';
 import { NavHistory } from './history';
 import { parseInternal } from './internal';
 import type { Place } from './history';
 import { parseStepNumber, positionAfterReload } from './steps';
+
+/**
+ * How long a step has to be on screen before it counts as read. Long enough
+ * that holding `j` to the end of a tour reads nothing.
+ */
+export const READ_AFTER_MS = 1500;
 
 /**
  * Everything the app is showing: the workspace, its tours, and the tour and
@@ -23,7 +29,14 @@ class Session {
   index = $state(0);
   step = $state<StepView | null>(null);
   vars = $state<VarView[]>([]);
+  /** How far the reader is from being able to mark the open tour reviewed. */
+  review = $state<ReviewState | null>(null);
+  /** Whether the reader is being asked to confirm a review. */
+  reviewAsking = $state(false);
+  /** Whether a review is being saved. */
+  reviewing = $state(false);
 
+  private readTimer: ReturnType<typeof setTimeout> | undefined;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
   private history = new NavHistory();
   private cache = new Map<number, StepView>();
@@ -81,8 +94,10 @@ class Session {
       const workspace = await api.chooseFolder();
       if (workspace.root !== this.workspace?.root) {
         this.workspace = workspace;
+        clearTimeout(this.readTimer);
         this.view = null;
         this.step = null;
+        this.review = null;
         this.cache.clear();
       }
       await this.refreshTours();
@@ -102,6 +117,7 @@ class Session {
       this.cache.clear();
       this.view = view;
       this.vars = view.vars ?? [];
+      this.review = view.review;
       this.error = '';
       await this.go(index, record);
     } catch (err) {
@@ -112,6 +128,7 @@ class Session {
   /** Moves to a step of the open tour. */
   async go(index: number, record = true): Promise<void> {
     const count = this.stepCount;
+    clearTimeout(this.readTimer);
     if (!this.view || count === 0) {
       this.step = null;
       return;
@@ -124,6 +141,7 @@ class Session {
     }
     this.browsing = null;
     this.editorMenu = false;
+    this.reviewAsking = false;
     this.index = target;
     if (record) {
       this.history.visit({ path: this.path, index: target });
@@ -136,6 +154,7 @@ class Session {
       }
       this.step = step;
       this.error = '';
+      this.countAsRead(target);
       // Warm the next step so `j` is instant.
       if (target + 1 < count) {
         void this.load(target + 1).catch(() => undefined);
@@ -144,6 +163,53 @@ class Session {
       if (generation === this.generation) {
         this.error = errorMessage(err);
       }
+    }
+  }
+
+  /**
+   * Tells Go a step has been read, once it has stayed on screen for a moment.
+   * Leaving the step first cancels it. Go keeps the count and is what refuses
+   * a review of a tour that wasn't read through.
+   */
+  private countAsRead(index: number): void {
+    clearTimeout(this.readTimer);
+    if (!this.review?.available || this.review.read?.[index]) {
+      return;
+    }
+    const path = this.path;
+    this.readTimer = setTimeout(() => {
+      if (path !== this.path || index !== this.index) {
+        return;
+      }
+      // A step behind another window isn't being read: wait for it to come back.
+      if (document.hidden) {
+        this.countAsRead(index);
+        return;
+      }
+      api
+        .markRead(path, index)
+        .then((review) => {
+          if (path === this.path) {
+            this.review = review;
+          }
+        })
+        .catch((err: unknown) => (this.error = errorMessage(err)));
+    }, READ_AFTER_MS);
+  }
+
+  /** Signs the open tour as reviewed. The caller has already asked the reader. */
+  async markReviewed(name: string): Promise<boolean> {
+    this.reviewing = true;
+    try {
+      await api.review(this.path, name);
+      await this.reload();
+      this.say(`Marked reviewed by ${name.trim()}.`);
+      return true;
+    } catch (err) {
+      this.error = errorMessage(err);
+      return false;
+    } finally {
+      this.reviewing = false;
     }
   }
 
@@ -171,8 +237,10 @@ class Session {
   /** Returns to the tour picker. */
   async close(record = true): Promise<void> {
     this.generation++;
+    clearTimeout(this.readTimer);
     this.view = null;
     this.step = null;
+    this.review = null;
     this.cache.clear();
     if (record) {
       this.history.visit({ path: '', index: 0 });
@@ -202,6 +270,7 @@ class Session {
       this.cache.clear();
       this.view = view;
       this.vars = view.vars ?? [];
+      this.review = view.review;
       this.error = '';
       await this.go(positionAfterReload(previous, view.tour?.steps ?? []), false);
     } catch (err) {
@@ -347,7 +416,7 @@ class Session {
     }
   }
 
-  private say(message: string): void {
+  say(message: string): void {
     this.notice = message;
     clearTimeout(this.noticeTimer);
     this.noticeTimer = setTimeout(() => (this.notice = ''), 3500);

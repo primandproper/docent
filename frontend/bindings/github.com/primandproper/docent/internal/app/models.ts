@@ -64,6 +64,39 @@ export interface LaunchRequest {
 }
 
 /**
+ * ReviewState is what stands between the reader and marking a tour
+ * reviewed. A review says "I walked this and it is right", so it is only
+ * offered once every step has been read since the tour was last opened
+ * unchanged, in this run of the app.
+ */
+export interface ReviewState {
+    /**
+     * Name is the reviewer's name to offer: git's user.name, or "".
+     */
+    "name": string;
+
+    /**
+     * Blocker says why the tour can't be reviewed yet, or is "" when it can.
+     */
+    "blocker": string;
+
+    /**
+     * Read runs parallel to the tour's steps: which have been read.
+     */
+    "read": boolean[] | null;
+
+    /**
+     * Available is false for a plain CodeTour file, which has no reviews.
+     */
+    "available": boolean;
+
+    /**
+     * Ready is set once nothing stands in the way.
+     */
+    "ready": boolean;
+}
+
+/**
  * StepSummary is what the step rail needs to know about a step.
  */
 export interface StepSummary {
@@ -220,6 +253,11 @@ export interface TourView {
      * Repos is where each of the tour's repos stands on this machine.
      */
     "repos": walk$0.RepoState[] | null;
+
+    /**
+     * Review is how far the reader is from being able to vouch for the tour.
+     */
+    "review": ReviewState;
 
     /**
      * WorkingTree is set while files are read from disk, not at each ref.

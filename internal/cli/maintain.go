@@ -14,6 +14,7 @@ import (
 	"github.com/primandproper/docent/internal/anchor"
 	"github.com/primandproper/docent/internal/core"
 	"github.com/primandproper/docent/internal/orderedjson"
+	"github.com/primandproper/docent/internal/stamp"
 	"github.com/primandproper/docent/internal/tour"
 	"github.com/primandproper/docent/internal/walk"
 
@@ -226,88 +227,27 @@ func (a *application) stamp(ctx context.Context, arg string, hashes, force bool,
 	}
 	defer services.Close()
 
-	if !t.IsDocent() {
+	result, err := stamp.Apply(ctx, services.Walker, t, &stamp.Options{Hashes: hashes, Force: force, Review: review})
+
+	var drift *stamp.DriftError
+
+	switch {
+	case errors.Is(err, stamp.ErrPlainTour):
 		return fmt.Errorf("%s is a plain CodeTour file: stamps need \"docent\": 1 and `repos`", arg)
-	}
-
-	steps := make([]*walk.Step, len(t.Steps))
-
-	var drifted []string
-
-	for i := range t.Steps {
-		if steps[i], err = services.Walker.Step(ctx, t, i); err != nil {
-			return fmt.Errorf("resolving step %s: %w", t.StepLabel(i), err)
-		}
-
-		if status := statusOf(steps[i]); status != anchor.StatusOK {
-			drifted = append(drifted, fmt.Sprintf("  %-10s %s", status, t.StepLabel(i)))
-		}
-
-		for j := range steps[i].Extras {
-			if status := statusOf(steps[i].Extras[j].Code); status != anchor.StatusOK {
-				drifted = append(drifted, fmt.Sprintf("  %-10s %s, anchor %q", status, t.StepLabel(i), steps[i].Extras[j].Label))
-			}
-		}
-	}
-
-	if len(drifted) > 0 && !force {
-		return fmt.Errorf("%d of this tour's anchors don't resolve cleanly, and stamping now would hide that:\n%s\nfix them first, or pass --force",
-			len(drifted), strings.Join(drifted, "\n"))
+	case errors.As(err, &drift):
+		return fmt.Errorf("%w\nfix them first, or pass --force", err)
+	case err != nil:
+		return err
 	}
 
 	var out strings.Builder
 
-	commits := map[string]string{}
-
-	for i := range t.Repos {
-		repo := &t.Repos[i]
-
-		state, repoErr := services.Walker.Repo(ctx, t, repo.Name)
-		if repoErr != nil {
-			return repoErr
-		}
-
-		switch {
-		case !state.Found:
-			return fmt.Errorf("repo %q isn't checked out here, so it can't be stamped", repo.Name)
-		case state.Ref == nil || state.Ref.Commit == "":
-			return fmt.Errorf("repo %q has no commit to stamp: give it a `ref`, and make sure %s is a git repository", repo.Name, state.Root)
-		}
-
-		commits[repo.Name] = state.Ref.Commit
-		tour.SetStamp(t.Raw, repo.Name, state.Ref.Commit)
-		fmt.Fprintf(&out, "%-12s %s -> %s\n", repo.Name, orDash(shortSHA(repo.Stamp)), shortSHA(state.Ref.Commit))
-	}
-
-	for i := range t.Steps {
-		hash := ""
-
-		// A hash describes the code at its stamp, so moving the stamp without
-		// recomputing it leaves a hash that describes nothing: it is cleared.
-		if res := steps[i].Anchor; hashes && res != nil && res.Content != nil {
-			hash = anchor.Hash(anchor.SplitLines(res.Content), res.Location.Range)
-		}
-
-		tour.SetHash(t.Raw, i, hash)
-
-		for j := range steps[i].Extras {
-			extraHash := ""
-			if res := steps[i].Extras[j].Code.Anchor; hashes && res != nil && res.Content != nil {
-				extraHash = anchor.Hash(anchor.SplitLines(res.Content), res.Location.Range)
-			}
-
-			tour.SetAnchorHash(t.Raw, i, j, extraHash)
-		}
+	for i := range result.Moves {
+		move := &result.Moves[i]
+		fmt.Fprintf(&out, "%-12s %s -> %s\n", move.Name, orDash(shortSHA(move.From)), shortSHA(move.To))
 	}
 
 	if review != nil {
-		if len(commits) == 1 {
-			for _, sha := range commits {
-				review.Ref = sha
-			}
-		}
-
-		tour.AppendReview(t.Raw, review)
 		fmt.Fprintf(&out, "reviewed by %s\n", review.Name)
 	}
 
@@ -318,17 +258,6 @@ func (a *application) stamp(ctx context.Context, arg string, hashes, force bool,
 	_, err = io.WriteString(a.streams.Stdout, out.String())
 
 	return err
-}
-
-func statusOf(step *walk.Step) anchor.Status {
-	switch {
-	case step.Anchor != nil:
-		return step.Anchor.Location.Status
-	case step.Problem != "":
-		return anchor.StatusMissing
-	default:
-		return anchor.StatusOK
-	}
 }
 
 func shortSHA(sha string) string {

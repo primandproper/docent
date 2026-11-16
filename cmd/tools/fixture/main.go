@@ -40,8 +40,11 @@ type (
 		// LinkFences holds what the service made of each docent-links fence,
 		// keyed by tour path and then by the fence's body.
 		LinkFences map[string]map[string][]links.Card `json:"linkFences"`
-		Workspace  app.Workspace                      `json:"workspace"`
-		Tours      []app.TourSummary                  `json:"tours"`
+		// ReviewProblems holds what stops each tour being reviewed once every
+		// step has been read, by tour path: "" when nothing does.
+		ReviewProblems map[string]string `json:"reviewProblems"`
+		Workspace      app.Workspace     `json:"workspace"`
+		Tours          []app.TourSummary `json:"tours"`
 	}
 
 	picked struct {
@@ -79,13 +82,14 @@ func run(ctx context.Context, testdata, output string) error {
 	service := app.NewService(root, services, nil, nil, nil)
 
 	out := fixture{
-		Workspace:  service.Workspace(),
-		Views:      map[string]*app.TourView{},
-		Steps:      map[string][]*app.StepView{},
-		Picked:     map[string]picked{},
-		LinkFences: map[string]map[string][]links.Card{},
-		Listings:   map[string]map[string][]gitsrc.Entry{},
-		Files:      map[string]map[string]*app.FileView{},
+		Workspace:      service.Workspace(),
+		Views:          map[string]*app.TourView{},
+		Steps:          map[string][]*app.StepView{},
+		Picked:         map[string]picked{},
+		LinkFences:     map[string]map[string][]links.Card{},
+		ReviewProblems: map[string]string{},
+		Listings:       map[string]map[string][]gitsrc.Entry{},
+		Files:          map[string]map[string]*app.FileView{},
 	}
 
 	if out.Tours, err = service.ListTours(ctx); err != nil {
@@ -104,6 +108,19 @@ func run(ctx context.Context, testdata, output string) error {
 		}
 
 		out.Views[path], out.Steps[path] = view, steps
+
+		// The name on offer is this machine's git user, which isn't the
+		// fixture's business. The recorded backend supplies its own.
+		view.Review.Name = ""
+
+		for index := range steps {
+			state, readErr := service.MarkRead(ctx, path, index)
+			if readErr != nil {
+				return fmt.Errorf("marking step %d of %q read: %w", index, path, readErr)
+			}
+
+			out.ReviewProblems[path] = state.Blocker
+		}
 		out.LinkFences[path] = map[string][]links.Card{}
 		out.Listings[path] = map[string][]gitsrc.Entry{}
 		out.Files[path] = map[string]*app.FileView{}

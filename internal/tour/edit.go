@@ -8,8 +8,8 @@ import (
 	"github.com/primandproper/docent/internal/orderedjson"
 )
 
-// The functions here edit a tour's raw document in place. Only the CLI calls
-// them: the app never writes a tour.
+// The functions here edit a tour's raw document in place. The CLI calls them,
+// and so does the app for the one edit it makes: recording a review.
 
 // SetStamp records the commit a repo's part of the tour was written against.
 func SetStamp(raw *orderedjson.Value, repo, sha string) {

@@ -1,7 +1,7 @@
 // A recorded backend for browser tests: answers come from /fixture.json, which
 // cmd/tools/fixture writes by running the real Go service over a workspace.
 import { isExternalURL } from './api';
-import type { Api, Card, Entry, FileView, StepView, TourSummary, TourView, Workspace } from './api';
+import type { Api, Card, Entry, FileView, ReviewState, StepView, TourSummary, TourView, Workspace } from './api';
 
 interface Fixture {
   workspace: Workspace;
@@ -15,6 +15,8 @@ interface Fixture {
   files: Record<string, Record<string, FileView>>;
   /** What Go made of each docent-links fence, by tour path and then fence body. */
   linkFences: Record<string, Record<string, Card[]>>;
+  /** What, other than unread steps, stops each tour being reviewed, by tour path. '' when nothing does. */
+  reviewProblems: Record<string, string>;
 }
 
 declare global {
@@ -28,6 +30,8 @@ declare global {
     docentFixture?: Fixture;
     docentChanged: () => void;
     docentLaunch?: { tour: string; step: string };
+    /** Reviews the app signed, as "name: path". */
+    reviewed: string[];
   }
 }
 
@@ -35,6 +39,7 @@ window.openedURLs = [];
 window.openedInEditor = [];
 window.copied = [];
 window.gitActions = [];
+window.reviewed = [];
 
 const listeners = new Set<() => void>();
 window.docentChanged = () => listeners.forEach((listener) => listener());
@@ -56,6 +61,25 @@ async function current(path: string): Promise<{ view: TourView; steps: StepView[
   return f.views[path] ? { view: f.views[path], steps: f.steps[path] ?? [] } : undefined;
 }
 
+/** Which steps of each tour have been read, as Go would keep it. */
+const read = new Map<string, boolean[]>();
+
+/** The reviewer's name Go would have found in git's config. */
+const READER = 'Ada Reader';
+
+async function reviewState(path: string, view: TourView): Promise<ReviewState> {
+  const steps = view.tour?.steps?.length ?? 0;
+  let seen = read.get(path);
+  if (!seen || seen.length !== steps) {
+    seen = new Array<boolean>(steps).fill(false);
+    read.set(path, seen);
+  }
+  const available = view.review.available;
+  const problem = (await fixture()).reviewProblems[path] ?? '';
+  const blocker = problem || (seen.every(Boolean) ? '' : 'Read every step first.');
+  return { available, name: available ? READER : '', read: [...seen], blocker, ready: available && blocker === '' };
+}
+
 export const backend: Api = {
   workspace: async () => (await fixture()).workspace,
   listTours: async () => (await fixture()).tours,
@@ -64,7 +88,36 @@ export const backend: Api = {
     if (!found) {
       throw new Error(`${path}: not a tour in this workspace`);
     }
-    return found.view;
+    return { ...found.view, review: await reviewState(path, found.view) };
+  },
+  markRead: async (path, index) => {
+    const found = await current(path);
+    if (!found) {
+      throw new Error(`${path} is not open`);
+    }
+    await reviewState(path, found.view);
+    read.get(path)![index] = true;
+    return reviewState(path, found.view);
+  },
+  review: async (path, name) => {
+    const found = await current(path);
+    if (!found?.view.tour || !(await reviewState(path, found.view)).ready) {
+      throw new Error("this tour hasn't been read through yet");
+    }
+    window.reviewed.push(`${name}: ${path}`);
+    // Stand in for what Go writes: the review, and a read that starts over.
+    const f = await fixture();
+    const reviews = [...(found.view.tour.reviewedBy ?? []), { name, at: '2026-11-16T12:00:00Z', ref: '' }];
+    for (const view of [
+      f.views[path],
+      ...Object.entries(f.picked).map(([key, value]) => (key.startsWith(`${path}|`) ? value.view : undefined)),
+    ]) {
+      if (view?.tour) {
+        view.tour.reviewedBy = reviews;
+      }
+    }
+    read.delete(path);
+    window.docentChanged();
   },
   step: async (path, index) => {
     const step = (await current(path))?.steps[index];
