@@ -22,6 +22,8 @@ import (
 	"github.com/primandproper/docent/internal/editor"
 	"github.com/primandproper/docent/internal/gitsrc"
 	"github.com/primandproper/docent/internal/links"
+	"github.com/primandproper/docent/internal/orderedjson"
+	"github.com/primandproper/docent/internal/stamp"
 	"github.com/primandproper/docent/internal/tour"
 	"github.com/primandproper/docent/internal/validate"
 	"github.com/primandproper/docent/internal/walk"
@@ -57,6 +59,11 @@ var (
 	// ErrNotCloneable is returned for a repo that is already here, or whose
 	// remote isn't a plain https or ssh git URL.
 	ErrNotCloneable = errors.New("this repo can't be cloned from the app")
+	// ErrNotRead is returned when a review is asked for before every step of
+	// the tour has been read in this session.
+	ErrNotRead = errors.New("this tour hasn't been read through yet")
+	// ErrBadName is returned for a reviewer's name that can't be recorded.
+	ErrBadName = errors.New("not a name a review can be signed with")
 	// ErrBadVariable is returned for a variable or value the tour doesn't allow.
 	ErrBadVariable = errors.New("not a value this tour's variable accepts")
 )
@@ -127,8 +134,40 @@ type (
 		MapProblem string `json:"mapProblem"`
 		// Repos is where each of the tour's repos stands on this machine.
 		Repos []walk.RepoState `json:"repos"`
+		// Review is how far the reader is from being able to vouch for the tour.
+		Review ReviewState `json:"review"`
 		// WorkingTree is set while files are read from disk, not at each ref.
 		WorkingTree bool `json:"workingTree"`
+	}
+
+	// ReviewState is what stands between the reader and marking a tour
+	// reviewed. A review says "I walked this and it is right", so it is only
+	// offered once every step has been read since the tour was last opened
+	// unchanged, in this run of the app.
+	ReviewState struct {
+		_ struct{} `json:"-"`
+		// Name is the reviewer's name to offer: git's user.name, or "".
+		Name string `json:"name"`
+		// Blocker says why the tour can't be reviewed yet, or is "" when it can.
+		Blocker string `json:"blocker"`
+		// Read runs parallel to the tour's steps: which have been read.
+		Read []bool `json:"read"`
+		// Available is false for a plain CodeTour file, which has no reviews.
+		Available bool `json:"available"`
+		// Ready is set once nothing stands in the way.
+		Ready bool `json:"ready"`
+	}
+
+	// progress is how much of one tour has been read. It is never saved: a
+	// read-through has to happen in one sitting.
+	progress struct {
+		_ struct{}
+		// mark identifies the tour's text, so an edit starts the read again.
+		mark string
+		// problem is what, other than unread steps, blocks a review.
+		problem string
+		name    string
+		read    []bool
 	}
 
 	// StepView is one step resolved against the code, ready to render.
@@ -228,9 +267,12 @@ type (
 		logger   logging.Logger
 		tracer   tracing.Tracer
 		open     map[string]*tour.Tour
-		root     string
-		known    []string
-		mu       sync.Mutex
+		progress map[string]*progress
+		// write saves a tour. Tests replace it.
+		write func(path string, raw *orderedjson.Value) error
+		root  string
+		known []string
+		mu    sync.Mutex
 		// workingTree mirrors the walker's toggle, for reporting.
 		workingTree bool
 	}
@@ -245,6 +287,8 @@ func NewService(root string, services *core.Core, launcher editor.Launcher, logg
 		logger:   logging.NewNamedLogger(logger, o11yName),
 		tracer:   tracing.NewNamedTracer(tracerProvider, o11yName),
 		open:     map[string]*tour.Tour{},
+		progress: map[string]*progress{},
+		write:    tour.Write,
 	}
 }
 
@@ -305,6 +349,7 @@ func (s *Service) reroot(root string) error {
 	previous := s.core
 	s.core, s.root = services, root
 	s.open = map[string]*tour.Tour{}
+	s.progress = map[string]*progress{}
 	s.known = nil
 	s.mu.Unlock()
 
@@ -572,17 +617,30 @@ func (s *Service) OpenTour(ctx context.Context, path string) (*TourView, error) 
 		view.Diagnostics = []diag.Diagnostic{}
 	}
 
+	steps := make([]*walk.Step, len(t.Steps))
+
 	for i := range t.Steps {
 		step, stepErr := s.svc().Walker.Step(ctx, t, i)
 		if stepErr != nil {
 			return nil, observability.PrepareAndLogError(stepErr, logger, span, "resolving step %d", i)
 		}
 
+		steps[i] = step
 		view.Steps[i] = StepSummary{Kind: step.Kind, Status: statusOf(step)}
+	}
+
+	problem := reviewProblem(t, steps, view.Repos, workingTree)
+
+	name := ""
+	if git := s.svc().Git; git != nil && t.IsDocent() {
+		// Asked where the tour file lives, since that is the repo the review
+		// will be committed to.
+		name = git.UserName(ctx, filepath.Dir(t.Path))
 	}
 
 	s.mu.Lock()
 	s.open[path] = t
+	view.Review = s.track(t, problem, name)
 	s.mu.Unlock()
 
 	logger.WithValue("steps", len(t.Steps)).Info("opened tour")
@@ -712,14 +770,7 @@ func (s *Service) checkKnown(ctx context.Context, path string) error {
 }
 
 func statusOf(step *walk.Step) anchor.Status {
-	switch {
-	case step.Anchor != nil:
-		return step.Anchor.Location.Status
-	case step.Problem != "":
-		return anchor.StatusMissing
-	default:
-		return anchor.StatusOK
-	}
+	return stamp.StatusOf(step)
 }
 
 // vars lists a tour's link variables with their effective values.
@@ -913,6 +964,8 @@ func (s *Service) permalink(ctx context.Context, t *tour.Tour, step *walk.Step) 
 func (s *Service) SetWorkingTree(on bool) {
 	s.mu.Lock()
 	s.workingTree = on
+	// What was read one way wasn't read the other.
+	s.progress = map[string]*progress{}
 	s.mu.Unlock()
 
 	s.svc().Walker.SetWorkingTree(on)

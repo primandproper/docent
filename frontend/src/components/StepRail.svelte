@@ -6,6 +6,8 @@
 
   const steps = $derived(session.view?.tour?.steps ?? []);
   const summaries = $derived(session.view?.steps ?? []);
+  // Which steps count towards a review, where the tour can have one.
+  const read = $derived(session.review?.available ? (session.review.read ?? []) : []);
 
   let list: HTMLOListElement | undefined = $state();
 
@@ -31,7 +33,7 @@
           aria-current={i === session.index ? 'step' : undefined}
           onclick={() => session.go(i)}
         >
-          <span class="number">{i + 1}</span>
+          <span class="number" class:read={read[i]} title={read[i] ? 'Read' : undefined}>{i + 1}</span>
           <span class="text">
             <span class="title">{stepTitle(step)}</span>
             {#if target && (step.title || step.repo)}
@@ -98,6 +100,11 @@
     color: var(--muted);
     border: 1px solid var(--border);
     background: var(--raised);
+  }
+
+  .number.read {
+    border-color: var(--green);
+    color: var(--green);
   }
 
   .current .number {

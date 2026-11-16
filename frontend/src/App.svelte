@@ -63,6 +63,8 @@
       goingTo = true;
     } else if (event.key === 'Escape' && session.editorMenu) {
       session.editorMenu = false;
+    } else if (event.key === 'Escape' && session.reviewAsking) {
+      session.reviewAsking = false;
     } else if (event.key === 'Escape' && session.mapLarge) {
       session.mapLarge = false;
     } else if (event.key === 'Escape') {

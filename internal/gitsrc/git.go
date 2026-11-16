@@ -71,6 +71,8 @@ type (
 		DefaultBranch(ctx context.Context, dir string) string
 		// Origin returns the origin remote's URL, or "".
 		Origin(ctx context.Context, dir string) string
+		// UserName returns the name git would put on a commit made in dir, or "".
+		UserName(ctx context.Context, dir string) string
 		// LastFetch reports when the repo was last fetched, if it ever was.
 		LastFetch(ctx context.Context, dir string) (time.Time, bool)
 		// CountBetween counts the commits in from..to.
@@ -270,6 +272,15 @@ func (g *git) DefaultBranch(ctx context.Context, dir string) string {
 
 func (g *git) Origin(ctx context.Context, dir string) string {
 	out, err := g.run(ctx, dir, "config", "--get", "remote.origin.url")
+	if err != nil {
+		return ""
+	}
+
+	return out
+}
+
+func (g *git) UserName(ctx context.Context, dir string) string {
+	out, err := g.run(ctx, dir, "config", "--get", "user.name")
 	if err != nil {
 		return ""
 	}

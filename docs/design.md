@@ -26,7 +26,7 @@ Docent is a native desktop app (macOS only in v1) for walking guided tours of co
 - Author-supplied JavaScript or Svelte inside tours.
 - A hosted web version or a sharing service. Sharing is git.
 - Linux and Windows builds, and forges other than GitHub. Nothing in the design should preclude them later.
-- Editing tours or config. The app never writes either; where an edit would help, it offers a command to copy. Its only writes are a `git clone` or `git fetch` that it offers and the reader confirms.
+- Editing tours or config. The app never writes config, and the only edit it makes to a tour is recording a review (**Mark reviewed**, below); where any other edit would help, it offers a command to copy. Its other writes are a `git clone` or `git fetch`. Each of these is offered, and happens only once the reader confirms.
 
 ## Users and use cases
 
@@ -279,7 +279,7 @@ The bindings layer is the trust boundary. The CLI skips it and calls the same se
 
 ## CLI and agent authoring
 
-Agents author through the CLI and files; people review in the app. The app never writes tours or config, so a tour changes only through an editor, an agent, or an explicit CLI command.
+Agents author through the CLI and files; people review in the app. The app never writes config, and its one edit to a tour is the review a reader signs with **Mark reviewed**, so a tour otherwise changes only through an editor, an agent, or an explicit CLI command.
 
 | Command | Does |
 | --- | --- |
@@ -308,7 +308,7 @@ Agents author through the CLI and files; people review in the app. The app never
 - Set `generatedBy`; never set `reviewedBy`.
 - Loop on `docent validate --json` until clean.
 
-**The review loop.** The agent writes the tour and Docent live-reloads it. The person walks it and fixes steps in their editor (or asks the agent), then runs `docent review`. The **Unreviewed draft** badge exists because an AI tour that reads well can still be wrong, and walking it critically is the point of the tool.
+**The review loop.** The agent writes the tour and Docent live-reloads it. The person walks it and fixes steps in their editor (or asks the agent), then clicks **Mark reviewed** in the app or runs `docent review`. The button does what the command does, but only becomes available once every step has stayed on screen in one run of the app: passing through a step doesn't count, an edit to the tour starts the read again, and nothing about the read is saved. It asks for the reviewer's name (offering git's `user.name`) and confirmation before it writes. The **Unreviewed draft** badge exists because an AI tour that reads well can still be wrong, and walking it critically is the point of the tool.
 
 ## Anchor resolution and drift
 

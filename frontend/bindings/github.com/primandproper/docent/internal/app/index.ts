@@ -10,6 +10,7 @@ export type {
     AnchorView,
     FileView,
     LaunchRequest,
+    ReviewState,
     StepSummary,
     StepView,
     TourSummary,

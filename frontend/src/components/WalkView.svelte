@@ -3,6 +3,7 @@
   import CodeArea from './CodeArea.svelte';
   import Freshness from './Freshness.svelte';
   import Narrative from './Narrative.svelte';
+  import ReviewButton from './ReviewButton.svelte';
   import StepRail from './StepRail.svelte';
   import SystemMap from './SystemMap.svelte';
 
@@ -18,6 +19,7 @@
   // Only a tour with a map can show one large.
   const mapLarge = $derived(session.mapLarge && session.mapShown && !!session.view?.map);
   const unreviewed = $derived(!!tour?.generatedBy && (tour.reviewedBy ?? []).length === 0);
+  const reviewers = $derived((tour?.reviewedBy ?? []).map((review) => review.name));
 
   let showProblems = $state(false);
 </script>
@@ -28,7 +30,12 @@
     <h1>{tour?.title}</h1>
     {#if unreviewed}
       <span class="badge amber">Unreviewed draft</span>
+    {:else if reviewers.length > 0}
+      <span class="badge green" title={`Reviewed by ${reviewers.join(', ')}`}>
+        Reviewed by {reviewers[reviewers.length - 1]}
+      </span>
     {/if}
+    <ReviewButton />
     <span class="spacer"></span>
     {#each session.vars as v (v.name)}
       {@const choices = v.choices ?? []}
@@ -217,6 +224,14 @@
   .badge.amber {
     background: var(--amber-soft);
     color: var(--amber);
+  }
+
+  .badge.green {
+    background: var(--green-soft);
+    color: var(--green);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .badge.red {
