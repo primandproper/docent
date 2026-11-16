@@ -4,7 +4,18 @@
   import { tokenize } from '../lib/highlight';
   import type { Token } from '../lib/highlight';
 
-  let { path, content, range }: { path: string; content: string; range: Range } = $props();
+  let {
+    path,
+    content,
+    range,
+    firstLine = 1,
+  }: {
+    path: string;
+    content: string;
+    range: Range;
+    /** The number shown beside the first line, for an excerpt that starts partway into a file. */
+    firstLine?: number;
+  } = $props();
 
   // Rows are a fixed height so the pane can render only the ones on screen: a
   // 20,000-line file costs the same to scroll as a 20-line one.
@@ -23,7 +34,7 @@
   const lines = $derived(content.replace(/\n$/, '').split('\n'));
   const first = $derived(Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN));
   const last = $derived(Math.min(lines.length, Math.ceil((scrollTop + viewportHeight) / LINE_HEIGHT) + OVERSCAN));
-  const gutterWidth = $derived(`${String(lines.length).length + 2}ch`);
+  const gutterWidth = $derived(`${String(lines.length + firstLine - 1).length + 2}ch`);
 
   /** Tokens for lines [tokenStart, tokenStart + tokens.length). */
   let tokens = $state.raw<Token[][]>([]);
@@ -106,7 +117,7 @@
           class:band-start={n === range.startLine}
           class:band-end={range.startLine > 0 && n === range.endLine}
         >
-          <span class="gutter">{n}</span>
+          <span class="gutter">{n + firstLine - 1}</span>
           <span class="text"
             >{#if row}{#each row as token, t (t)}<span
                   style:--l={token.light}

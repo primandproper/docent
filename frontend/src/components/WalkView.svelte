@@ -3,6 +3,7 @@
   import { statusLabel, toneOf } from '../lib/status';
   import CodePane from './CodePane.svelte';
   import DirectoryPane from './DirectoryPane.svelte';
+  import Freshness from './Freshness.svelte';
   import Narrative from './Narrative.svelte';
   import StepRail from './StepRail.svelte';
 
@@ -15,6 +16,12 @@
   const unreviewed = $derived(!!tour?.generatedBy && (tour.reviewedBy ?? []).length === 0);
 
   let showProblems = $state(false);
+  /** Whether the code as it was is shown beside the code as it is. */
+  let comparing = $state(false);
+
+  const then = $derived(step?.then ?? null);
+  const thenText = $derived((then?.lines ?? []).join('\n'));
+  const stamp = $derived(session.view?.repos?.find((r) => r.name === step?.repo)?.stamp.slice(0, 7) ?? 'the stamp');
 </script>
 
 <div class="walk">
@@ -48,6 +55,14 @@
         {/if}
       </label>
     {/each}
+    <button
+      class="toggle"
+      aria-pressed={session.view?.workingTree ?? false}
+      onclick={() => session.setWorkingTree(!session.view?.workingTree)}
+      title="Read files as they are on disk, uncommitted changes included, instead of at each repo's ref"
+    >
+      Working tree
+    </button>
     {#if diagnostics.length > 0}
       <button class="badge red" onclick={() => (showProblems = !showProblems)} aria-expanded={showProblems}>
         {diagnostics.length}
@@ -70,6 +85,8 @@
     </ul>
   {/if}
 
+  <Freshness />
+
   <div class="panes" class:no-pane={!hasPane}>
     <StepRail />
 
@@ -88,7 +105,20 @@
                 : `lines ${step.location.range.startLine}–${step.location.range.endLine}`}
             </span>
           {/if}
+          {#if step?.ref?.commit}
+            <span class="ref" title={step.ref.detail || `Reading ${step.ref.name} at ${step.ref.commit}`}>
+              {step.ref.name} @ {step.ref.commit.slice(0, 7)}
+            </span>
+          {:else if step?.ref?.requested && session.view?.workingTree}
+            <span class="ref" title="Reading files as they are on disk">working tree</span>
+          {/if}
           <span class="spacer"></span>
+          {#if then && step?.content}
+            <button class="open" aria-pressed={comparing} onclick={() => (comparing = !comparing)}>Then / Now</button>
+          {/if}
+          {#if step?.permalink}
+            <button class="open" onclick={() => session.copy(step.permalink, 'the permalink')}>Copy permalink</button>
+          {/if}
           {#if step && statusLabel(step.location)}
             <span class="badge {toneOf(step.location.status)}" title={step.location.detail}>
               {statusLabel(step.location)}
@@ -112,8 +142,31 @@
             {/if}
           {:else if step.unavailable}
             <div class="placeholder">{step.unavailable}</div>
-          {:else if step.content === '' && step.location.status === 'missing'}
+          {:else if step.content === '' && step.location.status === 'missing' && !then}
             <div class="placeholder">{step.location.detail}</div>
+          {:else if then && (comparing || step.location.status === 'missing')}
+            <!-- What the step was written about, beside what is there now. -->
+            <div class="compare" class:alone={step.location.status === 'missing'}>
+              <div class="side">
+                <p class="caption">Then, at {stamp}</p>
+                <div class="code">
+                  <CodePane
+                    path={step.path}
+                    content={thenText}
+                    range={{ startLine: 0, startCol: 0, endLine: 0, endCol: 0 }}
+                    firstLine={then.startLine}
+                  />
+                </div>
+              </div>
+              {#if step.location.status !== 'missing'}
+                <div class="side">
+                  <p class="caption">Now</p>
+                  <div class="code">
+                    <CodePane path={step.path} content={step.content} range={step.location.range} />
+                  </div>
+                </div>
+              {/if}
+            </div>
           {:else}
             <CodePane path={step.path} content={step.content} range={step.location.range} />
           {/if}
@@ -200,6 +253,70 @@
     border-radius: 6px;
     padding: 2px 6px;
     max-width: 130px;
+  }
+
+  .toggle {
+    font-size: 12px;
+    padding: 2px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--raised);
+    color: var(--muted);
+  }
+
+  .toggle[aria-pressed='true'],
+  .open[aria-pressed='true'] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .ref {
+    margin-left: 6px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--hover);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .compare {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .compare.alone {
+    grid-template-columns: 1fr;
+  }
+
+  .side {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .side + .side {
+    border-left: 1px solid var(--border);
+  }
+
+  .caption {
+    flex: none;
+    margin: 0;
+    padding: 4px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--faint);
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  .side .code {
+    flex: 1;
+    min-height: 0;
   }
 
   .open {

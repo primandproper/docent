@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
-go run ./cmd/tools/fixture frontend/e2e/testdata/workspace frontend/e2e/public/fixture.json
+go run ./cmd/tools/fixture frontend/e2e/testdata frontend/e2e/public/fixture.json
 
 cd frontend
 pnpm exec vite build --mode mock --logLevel warn

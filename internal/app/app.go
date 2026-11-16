@@ -49,6 +49,8 @@ func Run(ctx context.Context, opts *Options) error {
 		return fmt.Errorf("setting up: %w", err)
 	}
 
+	defer services.Close()
+
 	launcher := editor.NewLauncher(services.Config, opts.Logger, opts.TracerProvider)
 	service := NewService(opts.Root, services, launcher, opts.Logger, opts.TracerProvider)
 

@@ -158,6 +158,10 @@ linters:
           - contextcheck
         path: (.+)_test\.go
       - linters:
+          - gosec
+          - goconst
+        path: (cmd/tools/|/gittest/)
+      - linters:
           - gocritic
         text: 'captLocal: `T'' should not be capitalized'
       - linters:

@@ -37,6 +37,12 @@
           <p class="notice {toneOf(location.status)}" role="status">{location.detail}</p>
         {/if}
 
+        {#if resolved?.removed}
+          <p class="notice red">
+            Removed in <code>{resolved.removed.sha.slice(0, 7)}</code>: {resolved.removed.subject}
+          </p>
+        {/if}
+
         {#if resolved?.cloneCommand}
           <div class="clone">
             <code class="selectable">{resolved.cloneCommand}</code>

@@ -150,6 +150,10 @@ func (a *application) newRootCommand() *cobra.Command {
 		a.newValidateCommand(),
 		a.newResolveCommand(),
 		a.newNewCommand(),
+		a.newFmtCommand(),
+		a.newStampCommand(),
+		a.newReviewCommand(),
+		a.newStaleCommand(),
 		a.newSchemaCommand(),
 		a.newGuideCommand(),
 	)

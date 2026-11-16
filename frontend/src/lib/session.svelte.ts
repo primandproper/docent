@@ -175,6 +175,33 @@ class Session {
     }
   }
 
+  /** Switches between reading code at each ref and reading it from disk. */
+  async setWorkingTree(on: boolean): Promise<void> {
+    try {
+      await api.setWorkingTree(on);
+      await this.reload();
+    } catch (err) {
+      this.error = errorMessage(err);
+    }
+  }
+
+  /** What git is doing right now on the reader's say-so, as "fetch api", or ''. */
+  gitBusy = $state('');
+
+  /** Fetches or clones a repo of the open tour. The caller has already asked the reader. */
+  async git(action: 'fetch' | 'clone', repo: string): Promise<void> {
+    this.gitBusy = `${action} ${repo}`;
+    try {
+      await (action === 'fetch' ? api.fetch(this.path, repo) : api.clone(this.path, repo));
+      await this.reload();
+      this.say(action === 'fetch' ? `Fetched ${repo}.` : `Cloned ${repo}.`);
+    } catch (err) {
+      this.error = errorMessage(err);
+    } finally {
+      this.gitBusy = '';
+    }
+  }
+
   /** Opens the current step's file in the reader's editor. */
   async openInEditor(editorID = ''): Promise<void> {
     if (this.view?.steps?.[this.index]?.kind !== 'file') {

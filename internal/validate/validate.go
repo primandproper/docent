@@ -110,8 +110,12 @@ func stepDiagnostic(t *tour.Tour, index int, step *walk.Step) (diag.Diagnostic, 
 		d.Code, d.Message = loc.Problem, loc.Detail
 		d.Pointer, d.Hint = anchorPointerAndHint(index, &t.Steps[index], &loc)
 
-		if loc.Status == anchor.StatusMoved {
+		// Drift is a warning: the step still shows something, and saying how
+		// far to trust it is the point. Code that is gone is an error.
+		switch loc.Status {
+		case anchor.StatusMoved, anchor.StatusChanged, anchor.StatusUnverified:
 			d.Severity = diag.SeverityWarning
+		case anchor.StatusOK, anchor.StatusAmbiguous, anchor.StatusMissing:
 		}
 	case walk.KindURI, walk.KindContent:
 		return d, false
@@ -180,6 +184,14 @@ func anchorPointerAndHint(index int, s *tour.Step, loc *anchor.Location) (pointe
 		}
 
 		return diag.Pointer("steps", index, "line"), ""
+	case diag.CodeContentChanged:
+		return diag.Pointer("steps", index), "Check the step still describes the code, fix what it says, then run `docent stamp`."
+	case diag.CodeCodeRemoved:
+		return diag.Pointer("steps", index), "Run `docent stale` to see what replaced it, then re-anchor or drop the step."
+	case diag.CodeStampUnreachable:
+		return diag.Pointer("repos", s.Repo, "stamp"), "Fetch the repo, or run `docent stamp` once the tour has been checked against the current code."
+	case diag.CodeRefMissing:
+		return diag.Pointer("steps", index, "file"), "Fetch the repo to get the commit, or change the `ref`."
 	case diag.CodeRepoUnknown:
 		return diag.Pointer("steps", index, "repo"), "Add the repo to the tour's `repos`, or fix the name."
 	case diag.CodeRepoMissing:

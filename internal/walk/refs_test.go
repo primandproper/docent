@@ -32,14 +32,14 @@ func gitWalker(t *testing.T, root string) Walker {
 	return NewWalker(&Dependencies{Source: git, Git: git, Repos: oneRepo{root: root}})
 }
 
-func repoTour(repo tour.Repo, steps ...tour.Step) *tour.Tour {
+func repoTour(repo *tour.Repo, steps ...tour.Step) *tour.Tour {
 	repo.Name = "api"
 
 	for i := range steps {
 		steps[i].Repo = "api"
 	}
 
-	return &tour.Tour{Path: "/t/.tours/t.tour", Root: "/t", Format: 1, Repos: []tour.Repo{repo}, Steps: steps}
+	return &tour.Tour{Path: "/t/.tours/t.tour", Root: "/t", Format: 1, Repos: []tour.Repo{*repo}, Steps: steps}
 }
 
 func TestWalker_Refs(T *testing.T) {
@@ -61,7 +61,7 @@ func TestWalker_Refs(T *testing.T) {
 		gittest.Attach(t, clone).Write(map[string]string{"a.go": "local edit\n"})
 
 		w := gitWalker(t, clone)
-		tr := repoTour(tour.Repo{Ref: "main"}, tour.Step{File: "a.go"})
+		tr := repoTour(&tour.Repo{Ref: "main"}, tour.Step{File: "a.go"})
 
 		step, err := w.Step(t.Context(), tr, 0)
 		must.NoError(t, err)
@@ -86,7 +86,7 @@ func TestWalker_Refs(T *testing.T) {
 		second := repo.Commit("two", map[string]string{"a.go": "v2\n"})
 
 		w := gitWalker(t, repo.Dir)
-		tr := repoTour(tour.Repo{Ref: "v1.0.0"}, tour.Step{File: "a.go"}, tour.Step{File: "a.go", Ref: second[:10]})
+		tr := repoTour(&tour.Repo{Ref: "v1.0.0"}, tour.Step{File: "a.go"}, tour.Step{File: "a.go", Ref: second[:10]})
 
 		step, err := w.Step(t.Context(), tr, 0)
 		must.NoError(t, err)
@@ -106,7 +106,7 @@ func TestWalker_Refs(T *testing.T) {
 		repo := gittest.New(t)
 		repo.Commit("one", map[string]string{"a.go": "v1\n"})
 
-		step, err := gitWalker(t, repo.Dir).Step(t.Context(), repoTour(tour.Repo{Ref: "feature/merged"}, tour.Step{File: "a.go"}), 0)
+		step, err := gitWalker(t, repo.Dir).Step(t.Context(), repoTour(&tour.Repo{Ref: "feature/merged"}, tour.Step{File: "a.go"}), 0)
 		must.NoError(t, err)
 		test.Eq(t, anchor.StatusOK, step.Anchor.Location.Status)
 		test.Eq(t, diag.CodeRefFallback, step.Ref.Problem)
@@ -120,7 +120,7 @@ func TestWalker_Refs(T *testing.T) {
 		repo := gittest.New(t)
 		repo.Commit("one", map[string]string{"a.go": "v1\n"})
 
-		step, err := gitWalker(t, repo.Dir).Step(t.Context(), repoTour(tour.Repo{Ref: "deadbeef1234"}, tour.Step{File: "a.go"}), 0)
+		step, err := gitWalker(t, repo.Dir).Step(t.Context(), repoTour(&tour.Repo{Ref: "deadbeef1234"}, tour.Step{File: "a.go"}), 0)
 		must.NoError(t, err)
 		test.Eq(t, anchor.StatusMissing, step.Anchor.Location.Status)
 		test.Eq(t, diag.CodeRefMissing, step.Anchor.Location.Problem)
@@ -133,7 +133,7 @@ func TestWalker_Refs(T *testing.T) {
 		dir := t.TempDir()
 		gittest.Attach(t, dir).Write(map[string]string{"a.go": "plain\n"})
 
-		step, err := gitWalker(t, dir).Step(t.Context(), repoTour(tour.Repo{Ref: "main"}, tour.Step{File: "a.go"}), 0)
+		step, err := gitWalker(t, dir).Step(t.Context(), repoTour(&tour.Repo{Ref: "main"}, tour.Step{File: "a.go"}), 0)
 		must.NoError(t, err)
 		test.Eq(t, "plain\n", string(step.Anchor.Content))
 		test.Eq(t, RefWorkingTree, step.Ref.Kind)
@@ -146,7 +146,7 @@ func TestWalker_Refs(T *testing.T) {
 		repo.Commit("one", map[string]string{"docs/README.md": "# Docs\n", "docs/a.md": ""})
 		repo.Write(map[string]string{"docs/uncommitted.md": ""})
 
-		step, err := gitWalker(t, repo.Dir).Step(t.Context(), repoTour(tour.Repo{Ref: "main"}, tour.Step{Directory: "docs"}), 0)
+		step, err := gitWalker(t, repo.Dir).Step(t.Context(), repoTour(&tour.Repo{Ref: "main"}, tour.Step{Directory: "docs"}), 0)
 		must.NoError(t, err)
 		test.Eq(t, []gitsrc.Entry{{Name: "README.md"}, {Name: "a.md"}}, step.Entries)
 		test.Eq(t, "# Docs\n", step.Readme)
@@ -164,7 +164,7 @@ func TestWalker_Stamps(T *testing.T) {
 		repo.Commit("two", map[string]string{"a.go": "package a\n\n// new\n// lines\n\nfunc A() {}\n"})
 
 		w := gitWalker(t, repo.Dir)
-		tr := repoTour(tour.Repo{Ref: "main", Stamp: stamp[:7]}, tour.Step{File: "a.go", Line: 3})
+		tr := repoTour(&tour.Repo{Ref: "main", Stamp: stamp[:7]}, tour.Step{File: "a.go", Line: 3})
 
 		step, err := w.Step(t.Context(), tr, 0)
 		must.NoError(t, err)
@@ -187,7 +187,7 @@ func TestWalker_Stamps(T *testing.T) {
 		repo.Commit("one", map[string]string{"a.go": "package a\n\nfunc A() {}\n"})
 
 		w := gitWalker(t, repo.Dir)
-		tr := repoTour(tour.Repo{Ref: "main", Stamp: "0123abc"},
+		tr := repoTour(&tour.Repo{Ref: "main", Stamp: "0123abc"},
 			tour.Step{File: "a.go", Pattern: "^func A", Line: 3},
 			tour.Step{File: "a.go", Pattern: "^func Gone"},
 		)
@@ -216,7 +216,7 @@ func TestWalker_Stamps(T *testing.T) {
 
 		w := gitWalker(t, repo.Dir)
 		good := anchor.Hash([]string{"package a", "", "func A() {}"}, anchor.Range{StartLine: 3, EndLine: 3})
-		tr := repoTour(tour.Repo{Ref: "main", Stamp: stamp},
+		tr := repoTour(&tour.Repo{Ref: "main", Stamp: stamp},
 			tour.Step{File: "a.go", Line: 3, ContentHash: good},
 			tour.Step{File: "a.go", Line: 3, ContentHash: anchor.HashPrefix + "00"},
 		)
@@ -233,7 +233,7 @@ func TestWalker_Stamps(T *testing.T) {
 	T.Run("an unknown repo is an error for Repo", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := gitWalker(t, t.TempDir()).Repo(t.Context(), repoTour(tour.Repo{}), "nope")
+		_, err := gitWalker(t, t.TempDir()).Repo(t.Context(), repoTour(&tour.Repo{}), "nope")
 		test.ErrorIs(t, err, ErrNoSuchRepo)
 	})
 }

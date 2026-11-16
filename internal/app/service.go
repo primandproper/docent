@@ -45,6 +45,9 @@ var (
 	ErrTourUnreadable = errors.New("tour could not be read")
 	// ErrNotAFile is returned when a step with no file is asked to open in an editor.
 	ErrNotAFile = errors.New("this step doesn't point at a file")
+	// ErrNotCloneable is returned for a repo that is already here, or whose
+	// remote isn't a plain https or ssh git URL.
+	ErrNotCloneable = errors.New("this repo can't be cloned from the app")
 	// ErrBadVariable is returned for a variable or value the tour doesn't allow.
 	ErrBadVariable = errors.New("not a value this tour's variable accepts")
 )
@@ -109,6 +112,10 @@ type (
 		// Steps runs parallel to Tour.Steps.
 		Steps []StepSummary `json:"steps"`
 		Vars  []VarView     `json:"vars"`
+		// Repos is where each of the tour's repos stands on this machine.
+		Repos []walk.RepoState `json:"repos"`
+		// WorkingTree is set while files are read from disk, not at each ref.
+		WorkingTree bool `json:"workingTree"`
 	}
 
 	// StepView is one step resolved against the code, ready to render.
@@ -131,6 +138,16 @@ type (
 		BodyProblem string `json:"bodyProblem"`
 		// Repo is the logical repo the step lives in, when the tour names one.
 		Repo string `json:"repo"`
+		// Ref is what the code is being read at.
+		Ref *walk.Ref `json:"ref"`
+		// Then is the anchored code as it was when the tour was written, when
+		// it has changed or been removed since.
+		Then *anchor.Then `json:"then"`
+		// Removed is the commit that removed the code, when one was found.
+		Removed *gitsrc.Commit `json:"removed"`
+		// Permalink is a GitHub URL for the anchored lines at the commit being
+		// read, or "" when there isn't one.
+		Permalink string `json:"permalink"`
 		// CloneCommand fetches the step's repo when it isn't checked out,
 		// quoted for pasting into a shell.
 		CloneCommand string          `json:"cloneCommand"`
@@ -151,6 +168,8 @@ type (
 		root     string
 		known    []string
 		mu       sync.Mutex
+		// workingTree mirrors the walker's toggle, for reporting.
+		workingTree bool
 	}
 )
 
@@ -180,6 +199,10 @@ func (s *Service) Workspace() Workspace {
 func (s *Service) ListTours(ctx context.Context) ([]TourSummary, error) {
 	ctx, span := s.tracer.StartSpan(ctx)
 	defer span.End()
+
+	// Listing is what a reload does first, so this is where a fetch or a new
+	// commit since the last look gets noticed.
+	s.core.Walker.Reset()
 
 	paths, err := s.discover(ctx)
 	if err != nil {
@@ -292,7 +315,24 @@ func (s *Service) OpenTour(ctx context.Context, path string) (*TourView, error) 
 		return nil, observability.PrepareAndLogError(fmt.Errorf("%w: %s", ErrTourUnreadable, message), logger, span, "opening tour")
 	}
 
-	view := &TourView{Tour: t, Diagnostics: diags, Steps: make([]StepSummary, len(t.Steps)), Vars: s.vars(t)}
+	s.mu.Lock()
+	workingTree := s.workingTree
+	s.mu.Unlock()
+
+	view := &TourView{
+		Tour: t, Diagnostics: diags, Steps: make([]StepSummary, len(t.Steps)), Vars: s.vars(t),
+		Repos: make([]walk.RepoState, 0, len(t.Repos)), WorkingTree: workingTree,
+	}
+
+	for i := range t.Repos {
+		state, repoErr := s.core.Walker.Repo(ctx, t, t.Repos[i].Name)
+		if repoErr != nil {
+			return nil, observability.PrepareAndLogError(repoErr, logger, span, "inspecting repo %s", t.Repos[i].Name)
+		}
+
+		view.Repos = append(view.Repos, *state)
+	}
+
 	if view.Diagnostics == nil {
 		view.Diagnostics = []diag.Diagnostic{}
 	}
@@ -362,8 +402,13 @@ func (s *Service) Step(ctx context.Context, path string, index int) (*StepView, 
 		view.Links = []links.Card{}
 	}
 
+	view.Ref = step.Ref
+	view.Permalink = s.permalink(ctx, t, step)
+
 	if step.Anchor != nil {
 		view.Location = step.Anchor.Location
+		view.Then = step.Anchor.Then
+		view.Removed = step.Anchor.Removed
 
 		switch content := step.Anchor.Content; {
 		case content == nil:
@@ -546,4 +591,166 @@ func shellJoin(argv []string) string {
 	}
 
 	return strings.Join(quoted, " ")
+}
+
+// permalink builds the GitHub link for a step's anchored lines, at the commit
+// being read (HEAD when reading the working tree).
+func (s *Service) permalink(ctx context.Context, t *tour.Tour, step *walk.Step) string {
+	if s.core.Git == nil || (step.Kind != walk.KindFile && step.Kind != walk.KindDirectory) || step.Path == "" {
+		return ""
+	}
+
+	if step.Anchor != nil && step.Anchor.Content == nil {
+		return ""
+	}
+
+	_, prefix, err := s.core.Git.Locate(ctx, step.Root)
+	if err != nil {
+		return ""
+	}
+
+	remote := s.core.Git.Origin(ctx, step.Root)
+
+	for i := range t.Repos {
+		if t.Repos[i].Name == step.Repo {
+			remote = t.Repos[i].Remote
+		}
+	}
+
+	sha := ""
+	if step.Ref != nil {
+		sha = step.Ref.Commit
+	}
+
+	if sha == "" {
+		if sha, err = s.core.Git.Commit(ctx, step.Root, "HEAD"); err != nil {
+			return ""
+		}
+	}
+
+	start, end := 0, 0
+	if step.Anchor != nil {
+		start, end = step.Anchor.Location.Range.StartLine, step.Anchor.Location.Range.EndLine
+	}
+
+	return links.Permalink(remote, sha, prefix+step.Path, start, end)
+}
+
+// SetWorkingTree switches between reading code at each repo's ref and reading
+// it as it is on disk, uncommitted changes included.
+func (s *Service) SetWorkingTree(on bool) {
+	s.mu.Lock()
+	s.workingTree = on
+	s.mu.Unlock()
+
+	s.core.Walker.SetWorkingTree(on)
+	s.logger.WithValue("working_tree", on).Info("switched what is read")
+}
+
+// repoState finds one of an open tour's repos.
+func (s *Service) repoState(ctx context.Context, path, name string) (*walk.RepoState, error) {
+	s.mu.Lock()
+	t, ok := s.open[path]
+	s.mu.Unlock()
+
+	if !ok {
+		return nil, fmt.Errorf("%q is not open: %w", path, ErrUnknownTour)
+	}
+
+	state, err := s.core.Walker.Repo(ctx, t, name)
+	if err != nil {
+		return nil, err
+	}
+
+	return state, nil
+}
+
+// Fetch runs `git fetch` in one of an open tour's repos. The frontend calls
+// it only after the reader has said yes: it is one of the two things Docent
+// ever does to a repo.
+func (s *Service) Fetch(ctx context.Context, path, repo string) error {
+	ctx, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	logger := s.logger.WithValues(map[string]any{tourKey: path, "repo": repo})
+
+	state, err := s.repoState(ctx, path, repo)
+	if err != nil {
+		return observability.PrepareAndLogError(err, logger, span, "fetching")
+	}
+
+	if !state.Found {
+		return observability.PrepareAndLogError(fmt.Errorf("repo %q: %w", repo, walk.ErrNoSuchRepo), logger, span, "fetching")
+	}
+
+	if err = s.core.Git.Fetch(ctx, state.Root); err != nil {
+		return observability.PrepareAndLogError(err, logger, span, "fetching")
+	}
+
+	s.core.Walker.Reset()
+	logger.Info("fetched repo")
+
+	return nil
+}
+
+// Clone clones one of an open tour's missing repos to where the clone command
+// shown to the reader says. Like Fetch, it runs only on the reader's say-so.
+func (s *Service) Clone(ctx context.Context, path, repo string) error {
+	ctx, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	logger := s.logger.WithValues(map[string]any{tourKey: path, "repo": repo})
+
+	state, err := s.repoState(ctx, path, repo)
+	if err != nil {
+		return observability.PrepareAndLogError(err, logger, span, "cloning")
+	}
+
+	// The remote comes from the tour, which is untrusted, and git will run a
+	// program for some kinds of "remote". Only plain network URLs get through.
+	if state.Found || len(state.CloneCommand) != 4 || !cloneable(state.Remote) {
+		return observability.PrepareAndLogError(fmt.Errorf("repo %q: %w", repo, ErrNotCloneable), logger, span, "cloning")
+	}
+
+	if err = s.core.Git.Clone(ctx, state.Remote, state.CloneCommand[3]); err != nil {
+		return observability.PrepareAndLogError(err, logger, span, "cloning")
+	}
+
+	s.core.Walker.Reset()
+	logger.WithValue("dest", state.CloneCommand[3]).Info("cloned repo")
+
+	return nil
+}
+
+// cloneable reports whether a remote is an https or ssh git URL, in URL or
+// scp-like form, and nothing else: no local paths, no transport helpers.
+func cloneable(remote string) bool {
+	if strings.ContainsAny(remote, " \t\n") {
+		return false
+	}
+
+	if strings.HasPrefix(remote, "https://") || strings.HasPrefix(remote, "ssh://") {
+		return true
+	}
+
+	user, rest, ok := strings.Cut(remote, "@")
+	if !ok {
+		return false
+	}
+
+	host, repoPath, ok := strings.Cut(rest, ":")
+
+	return ok && isUser(user) && isHost(host) && repoPath != "" && !strings.HasPrefix(repoPath, "-")
+}
+
+func isUser(s string) bool {
+	return s != "" && !strings.ContainsFunc(s, func(r rune) bool {
+		return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._", r)
+	})
+}
+
+func isHost(s string) bool {
+	return s != "" && !strings.HasPrefix(s, "-") && !strings.ContainsFunc(s, func(r rune) bool {
+		return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-", r)
+	})
 }

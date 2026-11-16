@@ -86,3 +86,12 @@ export enum Status {
      */
     StatusUnverified = "unverified",
 };
+
+/**
+ * Then is the anchored code as it was at the stamp, kept when it has
+ * since changed or gone, so the reader can see what the step was about.
+ */
+export interface Then {
+    "lines": string[] | null;
+    "startLine": number;
+}

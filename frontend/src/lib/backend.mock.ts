@@ -18,6 +18,7 @@ declare global {
     openedURLs: string[];
     openedInEditor: { path: string; index: number; editorID: string }[];
     copied: string[];
+    gitActions: string[];
     /** The recorded answers. Tests edit this, then call docentChanged, to stand in for a file changing. */
     docentFixture?: Fixture;
     docentChanged: () => void;
@@ -27,6 +28,7 @@ declare global {
 window.openedURLs = [];
 window.openedInEditor = [];
 window.copied = [];
+window.gitActions = [];
 
 const listeners = new Set<() => void>();
 window.docentChanged = () => listeners.forEach((listener) => listener());
@@ -72,6 +74,19 @@ export const backend: Api = {
       picks.set(path, `${name}=${value}`);
     }
     return (await current(path))?.view.vars ?? [];
+  },
+  setWorkingTree: async (on) => {
+    window.gitActions.push(`working-tree ${on}`);
+    const f = await fixture();
+    for (const view of Object.values(f.views)) {
+      view.workingTree = on;
+    }
+  },
+  fetch: async (_path, repo) => {
+    window.gitActions.push(`fetch ${repo}`);
+  },
+  clone: async (_path, repo) => {
+    window.gitActions.push(`clone ${repo}`);
   },
   editors: async () => [{ id: 'zed', name: 'Zed' }],
   openInEditor: async (path, index, editorID) => {

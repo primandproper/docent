@@ -48,6 +48,26 @@
       "id": "wrap-up",
       "title": "That's the whole read path",
       "description": "Short tour, short path."
+    },
+    {
+      "id": "purge-loop",
+      "title": "The retry loop",
+      "repo": "worker",
+      "file": "src/purge.ts",
+      "pattern": "^export async function purge",
+      "line": 7,
+      "selection": { "start": { "line": 7, "character": 1 }, "end": { "line": 19, "character": 2 } },
+      "description": "This loop was edited after the tour was written."
+    },
+    {
+      "id": "sleep-helper",
+      "title": "A hand-rolled sleep",
+      "repo": "worker",
+      "file": "src/purge.ts",
+      "pattern": "^function sleep",
+      "line": 21,
+      "selection": { "start": { "line": 21, "character": 1 }, "end": { "line": 23, "character": 2 } },
+      "description": "This helper was removed after the tour was written."
     }
   ]
 }

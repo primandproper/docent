@@ -370,7 +370,10 @@ func (g *git) LastTouch(ctx context.Context, dir, from, to, file, text string) (
 }
 
 func (g *git) Fetch(ctx context.Context, dir string) error {
+	g.logger.WithValue("dir", dir).Info("running git fetch")
+
 	_, err := g.run(ctx, dir, "fetch", "--quiet", "--prune", "origin")
+
 	return err
 }
 
@@ -378,6 +381,8 @@ func (g *git) Clone(ctx context.Context, remote, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return fmt.Errorf("creating %s: %w", filepath.Dir(dest), err)
 	}
+
+	g.logger.WithValues(map[string]any{"remote": remote, "dest": dest}).Info("running git clone")
 
 	_, err := g.run(ctx, filepath.Dir(dest), "clone", "--quiet", "--end-of-options", remote, dest)
 

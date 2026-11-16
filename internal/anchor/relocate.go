@@ -49,8 +49,8 @@ func Hash(lines []string, r Range) string {
 	h := sha256.New()
 
 	for _, line := range lines[r.StartLine-1 : r.EndLine] {
-		h.Write([]byte(normalize(line))) //nolint:errcheck // hash.Hash never fails to write
-		h.Write([]byte{'\n'})            //nolint:errcheck // as above
+		h.Write([]byte(normalize(line)))
+		h.Write([]byte{'\n'})
 	}
 
 	return HashPrefix + hex.EncodeToString(h.Sum(nil))

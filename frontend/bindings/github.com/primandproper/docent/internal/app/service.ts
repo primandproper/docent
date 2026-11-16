@@ -19,10 +19,27 @@ import * as editor$0 from "../editor/models.js";
 import * as $models from "./models.js";
 
 /**
+ * Clone clones one of an open tour's missing repos to where the clone command
+ * shown to the reader says. Like Fetch, it runs only on the reader's say-so.
+ */
+export function Clone(path: string, repo: string): $CancellablePromise<void> {
+    return $Call.ByID(254612477, path, repo);
+}
+
+/**
  * Editors lists the editors installed right now.
  */
 export function Editors(): $CancellablePromise<editor$0.Editor[] | null> {
     return $Call.ByID(136043198);
+}
+
+/**
+ * Fetch runs `git fetch` in one of an open tour's repos. The frontend calls
+ * it only after the reader has said yes: it is one of the two things Docent
+ * ever does to a repo.
+ */
+export function Fetch(path: string, repo: string): $CancellablePromise<void> {
+    return $Call.ByID(1623011496, path, repo);
 }
 
 /**
@@ -55,6 +72,14 @@ export function OpenTour(path: string): $CancellablePromise<$models.TourView | n
  */
 export function SetVar(path: string, name: string, value: string): $CancellablePromise<$models.VarView[] | null> {
     return $Call.ByID(804890209, path, name, value);
+}
+
+/**
+ * SetWorkingTree switches between reading code at each repo's ref and reading
+ * it as it is on disk, uncommitted changes included.
+ */
+export function SetWorkingTree(on: boolean): $CancellablePromise<void> {
+    return $Call.ByID(822162335, on);
 }
 
 /**

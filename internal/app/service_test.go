@@ -444,3 +444,73 @@ func TestShellJoin(T *testing.T) {
 		test.Eq(t, "", shellJoin(nil))
 	})
 }
+
+func TestCloneable(T *testing.T) {
+	T.Parallel()
+
+	T.Run("only plain https and ssh remotes", func(t *testing.T) {
+		t.Parallel()
+
+		for _, ok := range []string{"https://github.com/acme/api.git", "ssh://git@github.com/acme/api", "git@github.com:acme/api.git", "deploy_1@git.example.com:team/repo"} {
+			test.True(t, cloneable(ok), test.Sprint(ok))
+		}
+
+		for _, bad := range []string{
+			"", "/srv/git/api", "../api", "file:///srv/git/api", "ext::sh -c touch%20/tmp/pwned", "ext::sh",
+			"-oProxyCommand=evil@host:x", "git@-oProxyCommand=evil:x", "git@host:-x", "http://github.com/acme/api",
+			"git@github.com:acme/api.git --upload-pack=evil", "git@github.com", "fd::7",
+		} {
+			test.False(t, cloneable(bad), test.Sprint(bad))
+		}
+	})
+}
+
+func TestService_RepoActions(T *testing.T) {
+	T.Parallel()
+
+	T.Run("refuse tours that aren't open and repos the tour doesn't have", func(t *testing.T) {
+		t.Parallel()
+
+		s, _ := newServiceWith(fixedRepos{})
+
+		test.ErrorIs(t, s.Fetch(t.Context(), draftTour, "api"), ErrUnknownTour)
+		test.ErrorIs(t, s.Clone(t.Context(), draftTour, "api"), ErrUnknownTour)
+
+		_, err := s.OpenTour(t.Context(), draftTour)
+		must.NoError(t, err)
+
+		test.ErrorIs(t, s.Fetch(t.Context(), draftTour, "nope"), walk.ErrNoSuchRepo)
+		test.ErrorIs(t, s.Clone(t.Context(), draftTour, "nope"), walk.ErrNoSuchRepo)
+		// Not checked out, so there is nothing to fetch.
+		test.ErrorIs(t, s.Fetch(t.Context(), draftTour, "api"), walk.ErrNoSuchRepo)
+	})
+
+	T.Run("a repo that is already here can't be cloned again", func(t *testing.T) {
+		t.Parallel()
+
+		s, _ := newServiceWith(fixedRepos{root: "/checkouts/api"})
+		_, err := s.OpenTour(t.Context(), draftTour)
+		must.NoError(t, err)
+
+		test.ErrorIs(t, s.Clone(t.Context(), draftTour, "api"), ErrNotCloneable)
+	})
+
+	T.Run("an opened tour reports its repos", func(t *testing.T) {
+		t.Parallel()
+
+		s, _ := newServiceWith(fixedRepos{})
+		view, err := s.OpenTour(t.Context(), draftTour)
+		must.NoError(t, err)
+		must.Len(t, 1, view.Repos)
+		test.Eq(t, "api", view.Repos[0].Name)
+		test.False(t, view.Repos[0].Found)
+		test.Eq(t, []string{"git", "clone", "git@github.com:acme/api.git", "/w/my work/api"}, view.Repos[0].CloneCommand)
+		test.False(t, view.WorkingTree)
+
+		s.SetWorkingTree(true)
+
+		view, err = s.OpenTour(t.Context(), draftTour)
+		must.NoError(t, err)
+		test.True(t, view.WorkingTree)
+	})
+}

@@ -151,8 +151,9 @@ func (a *application) scaffold(dir, slug string) error {
 
 func (a *application) newResolveCommand() *cobra.Command {
 	var (
-		stepRef string
-		asJSON  bool
+		stepRef     string
+		asJSON      bool
+		workingTree bool
 	)
 
 	cmd := &cobra.Command{
@@ -163,40 +164,25 @@ func (a *application) newResolveCommand() *cobra.Command {
 			"This is how to check that an anchor points where you think.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.resolve(cmd.Context(), args[0], stepRef, asJSON)
+			return a.resolve(cmd.Context(), args[0], stepRef, asJSON, workingTree)
 		},
 	}
 
 	cmd.Flags().StringVar(&stepRef, "step", "", "the step to resolve: its id, or its number counting from 1")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
+	cmd.Flags().BoolVar(&workingTree, "working-tree", false, "read files as they are on disk, not at each repo's ref")
 
 	return cmd
 }
 
-func (a *application) resolve(ctx context.Context, arg, stepRef string, asJSON bool) error {
-	abs, err := filepath.Abs(arg)
-	if err != nil {
-		return fmt.Errorf("resolving %q: %w", arg, err)
-	}
-
-	services, err := a.coreFor(tour.RootFor(abs), nil)
+func (a *application) resolve(ctx context.Context, arg, stepRef string, asJSON, workingTree bool) error {
+	services, t, err := a.loadTour(ctx, arg)
 	if err != nil {
 		return err
 	}
+	defer services.Close()
 
-	t, diags, err := services.Store.Load(ctx, abs)
-	if err != nil {
-		return fmt.Errorf("loading %q: %w", arg, err)
-	}
-
-	if t == nil {
-		message := "it is not a tour"
-		if len(diags) > 0 {
-			message = diags[0].Message
-		}
-
-		return fmt.Errorf("%s can't be read: %s", arg, message)
-	}
+	services.Walker.SetWorkingTree(workingTree)
 
 	indexes := make([]int, 0, len(t.Steps))
 

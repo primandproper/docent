@@ -123,18 +123,17 @@ type (
 	}
 
 	walker struct {
-		_        struct{}
-		resolver anchor.Resolver
-		source   gitsrc.FileSource
-		repos    workspace.RepoResolver
-		vars     *links.Vars
-		git      gitsrc.Git
-		refs     map[string]*Ref
-		mu       sync.Mutex
-		// workingTree is the reader's toggle: read files as they are on disk.
-		workingTree bool
+		_           struct{}
+		resolver    anchor.Resolver
+		source      gitsrc.FileSource
+		repos       workspace.RepoResolver
+		git         gitsrc.Git
 		logger      logging.Logger
 		tracer      tracing.Tracer
+		vars        *links.Vars
+		refs        map[string]*Ref
+		mu          sync.Mutex
+		workingTree bool
 	}
 )
 
@@ -308,9 +307,13 @@ func (w *walker) SetWorkingTree(on bool) {
 
 func (w *walker) Reset() {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	w.refs = map[string]*Ref{}
+	w.mu.Unlock()
+
+	// A clone since the last look changes which repos are here.
+	if resettable, ok := w.repos.(interface{ Reset() }); ok {
+		resettable.Reset()
+	}
 }
 
 func (w *walker) Repo(ctx context.Context, t *tour.Tour, name string) (*RepoState, error) {

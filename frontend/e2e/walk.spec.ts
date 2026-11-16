@@ -25,7 +25,7 @@ test.describe('tour picker', () => {
 
     const draft = page.getByRole('button', { name: /Reading an item/ });
     await expect(draft).toContainText('Unreviewed draft');
-    await expect(draft).toContainText('1 problem');
+    await expect(draft).toContainText('2 problems');
     await expect(draft).toContainText('api, worker, billing');
 
     await expect(page.getByRole('button', { name: /broken\.tour/ })).toBeDisabled();
@@ -91,8 +91,8 @@ test.describe('walking a tour', () => {
     await openMain(page);
 
     await page.locator('.step').nth(2).click();
-    await expect(page.locator('.crumbs .badge')).toHaveText('+2 lines');
-    await expect(page.locator('.narrative .notice')).toContainText('pattern matched on line 7, not line 5');
+    await expect(page.locator('.crumbs .badge')).toHaveText('+4 lines');
+    await expect(page.locator('.narrative .notice')).toContainText('pattern matched on line 9, not line 5');
     await expect(page.locator('.row.band')).toContainText('export async function purge');
 
     await page.locator('.step').nth(3).click();
@@ -273,8 +273,110 @@ test.describe('a tour across repos', () => {
       window.docentChanged();
     });
 
-    await expect(page.locator('.step')).toHaveCount(5);
+    await expect(page.locator('.step')).toHaveCount(7);
     await expect(currentStep(page)).toContainText('Retries, retitled');
     await expect(page.locator('.row.band')).toContainText('const MAX_ATTEMPTS = 5;');
+  });
+});
+
+test.describe('drift', () => {
+  async function openDraft(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Reading an item/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Reading an item' })).toBeVisible();
+  }
+
+  test('the banner says how far each repo is from what the tour was written against', async ({ page }) => {
+    await openDraft(page);
+
+    const banner = page.getByRole('list', { name: 'How current this tour is' });
+    await expect(banner.getByRole('listitem')).toHaveCount(2);
+    await expect(banner).toContainText(
+      /worker: written against [0-9a-f]{7}, 1 commit \/ \d+ \w+ behind main · 1 moved · 1 changed · 1 missing/,
+    );
+    await expect(banner).toContainText("billing isn't checked out on this machine");
+    // A repo with nothing to report isn't mentioned.
+    await expect(banner).not.toContainText('api');
+  });
+
+  test('code is read at the ref, and says which commit', async ({ page }) => {
+    await openDraft(page);
+
+    await expect(page.locator('.crumbs .ref')).toHaveText(/^main @ [0-9a-f]{7}$/);
+
+    await page.getByRole('button', { name: 'Copy permalink' }).click();
+    expect((await page.evaluate(() => window.copied))[0]).toMatch(
+      /^https:\/\/github\.com\/acme\/api\/blob\/[0-9a-f]{40}\/internal\/http\/items\.go#L15$/,
+    );
+  });
+
+  test('an anchor that only shifted is followed exactly', async ({ page }) => {
+    await openDraft(page);
+
+    await page.locator('.step').nth(1).click();
+    await expect(page.locator('.crumbs .badge')).toHaveText('+2 lines');
+    await expect(page.locator('.row.band')).toContainText('const MAX_ATTEMPTS = 5;');
+    await expect(page.locator('.narrative .notice')).toContainText(/moved \+2 lines since [0-9a-f]{7}/);
+  });
+
+  test('edited code offers the original beside the current', async ({ page }) => {
+    await openDraft(page);
+
+    await page.locator('.step').nth(4).click();
+    await expect(page.locator('.crumbs .badge')).toHaveText('Code changed');
+    await expect(page.locator('.compare')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Then / Now' }).click();
+    const sides = page.locator('.compare .side');
+    await expect(sides).toHaveCount(2);
+    await expect(sides.nth(0).locator('.caption')).toHaveText(/Then, at [0-9a-f]{7}/);
+    await expect(sides.nth(0)).not.toContainText('log.warn');
+    // The original keeps its own line numbers.
+    await expect(sides.nth(0).locator('.gutter').first()).toHaveText('7');
+    await expect(sides.nth(1)).toContainText("log.warn('purge failed'");
+  });
+
+  test('removed code shows what it was and the commit that removed it', async ({ page }) => {
+    await openDraft(page);
+
+    await page.locator('.step').nth(5).click();
+    await expect(page.locator('.crumbs .badge')).toHaveText('Missing');
+    await expect(page.locator('.compare.alone .side')).toHaveCount(1);
+    await expect(page.locator('.compare')).toContainText('function sleep(ms: number): Promise<void> {');
+    await expect(page.locator('.narrative')).toContainText(
+      /Removed in [0-9a-f]{7}: use timers\/promises for sleep, and log failed purges/,
+    );
+  });
+
+  test('cloning a missing repo shows the command and waits for a yes', async ({ page }) => {
+    await openDraft(page);
+
+    const banner = page.getByRole('list', { name: 'How current this tour is' });
+    await banner.getByRole('button', { name: 'Clone…' }).click();
+    expect(await page.evaluate(() => window.gitActions)).toEqual([]);
+
+    const confirm = banner.getByRole('group', { name: 'Confirm clone' });
+    await expect(confirm.locator('code')).toContainText('git clone git@github.com:acme/billing.git');
+
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await expect(confirm).toHaveCount(0);
+    expect(await page.evaluate(() => window.gitActions)).toEqual([]);
+
+    await banner.getByRole('button', { name: 'Clone…' }).click();
+    await banner.getByRole('button', { name: 'Run it' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Cloned billing.' })).toBeVisible();
+    expect(await page.evaluate(() => window.gitActions)).toEqual(['clone billing']);
+  });
+
+  test('the working tree toggle reads from disk and hides the banner', async ({ page }) => {
+    await openDraft(page);
+
+    const toggle = page.getByRole('button', { name: 'Working tree' });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('list', { name: 'How current this tour is' })).toHaveCount(0);
+    expect(await page.evaluate(() => window.gitActions)).toEqual(['working-tree true']);
   });
 });

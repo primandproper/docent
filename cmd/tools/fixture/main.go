@@ -1,40 +1,48 @@
-// Command fixture runs the app's real service against a workspace and writes
-// everything the frontend would have asked it as one JSON file. The browser
-// tests load that file in place of the Wails bindings, so they exercise the
-// real frontend against real answers without a webview.
+// Command fixture builds a workspace of real git repositories from the files
+// under frontend/e2e/testdata, runs the app's real service against it, and
+// writes everything the frontend would have asked as one JSON file. The
+// browser tests load that file in place of the Wails bindings, so they
+// exercise the real frontend against real answers without a webview.
 package main
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/primandproper/docent/internal/app"
 	"github.com/primandproper/docent/internal/core"
+	"github.com/primandproper/docent/internal/orderedjson"
+	"github.com/primandproper/docent/internal/tour"
 )
 
-type fixture struct {
-	_     struct{}                   `json:"-"`
-	Views map[string]*app.TourView   `json:"views"`
-	Steps map[string][]*app.StepView `json:"steps"`
-	// Picked holds each tour again for every choice of every variable that
-	// has choices, keyed "path|name=value".
-	Picked    map[string]picked `json:"picked"`
-	Workspace app.Workspace     `json:"workspace"`
-	Tours     []app.TourSummary `json:"tours"`
-}
+type (
+	fixture struct {
+		_     struct{}                   `json:"-"`
+		Views map[string]*app.TourView   `json:"views"`
+		Steps map[string][]*app.StepView `json:"steps"`
+		// Picked holds each tour again for every choice of every variable that
+		// has choices, keyed "path|name=value".
+		Picked    map[string]picked `json:"picked"`
+		Workspace app.Workspace     `json:"workspace"`
+		Tours     []app.TourSummary `json:"tours"`
+	}
 
-type picked struct {
-	_     struct{}        `json:"-"`
-	View  *app.TourView   `json:"view"`
-	Steps []*app.StepView `json:"steps"`
-}
+	picked struct {
+		_     struct{}        `json:"-"`
+		View  *app.TourView   `json:"view"`
+		Steps []*app.StepView `json:"steps"`
+	}
+)
 
 func main() {
 	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: fixture <workspace> <output.json>")
+		fmt.Fprintln(os.Stderr, "usage: fixture <testdata dir> <output.json>")
 		os.Exit(2)
 	}
 
@@ -44,14 +52,10 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, workspace, output string) error {
-	root, err := filepath.Abs(workspace)
+func run(ctx context.Context, testdata, output string) error {
+	root, err := build(ctx, testdata)
 	if err != nil {
-		return fmt.Errorf("resolving workspace: %w", err)
-	}
-
-	if root, err = filepath.EvalSymlinks(root); err != nil {
-		return fmt.Errorf("resolving workspace: %w", err)
+		return fmt.Errorf("building the workspace: %w", err)
 	}
 
 	// The user's own config must not leak into a recorded fixture.
@@ -59,6 +63,7 @@ func run(ctx context.Context, workspace, output string) error {
 	if err != nil {
 		return fmt.Errorf("setting up: %w", err)
 	}
+	defer services.Close()
 
 	service := app.NewService(root, services, nil, nil, nil)
 
@@ -113,17 +118,155 @@ func run(ctx context.Context, workspace, output string) error {
 		return fmt.Errorf("encoding fixture: %w", err)
 	}
 
-	//nolint:gosec // a developer tool writing where its own caller said to
 	if err = os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
 
-	//nolint:gosec // a developer tool writing where its own caller said to
 	if err = os.WriteFile(output, encoded, 0o600); err != nil {
 		return fmt.Errorf("writing fixture: %w", err)
 	}
 
 	return nil
+}
+
+// build copies testdata/workspace somewhere stable outside this repository
+// and gives it history: api and worker become git repositories, the tours are
+// stamped at their first commits, and worker then moves on, so the tours have
+// drift to show.
+func build(ctx context.Context, testdata string) (string, error) {
+	// A fixed location keeps the paths in the fixture the same from run to run.
+	root := filepath.Join(os.TempDir(), "docent-e2e", "workspace")
+
+	if err := os.RemoveAll(filepath.Dir(root)); err != nil {
+		return "", fmt.Errorf("clearing %s: %w", root, err)
+	}
+
+	if err := os.CopyFS(root, os.DirFS(filepath.Join(testdata, "workspace"))); err != nil {
+		return "", fmt.Errorf("copying the workspace: %w", err)
+	}
+
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("resolving %s: %w", root, err)
+	}
+
+	stamps := map[string]string{}
+
+	for _, repo := range []string{"api", "worker"} {
+		dir := filepath.Join(root, repo)
+
+		for _, args := range [][]string{
+			{"init", "-q", "-b", "main"},
+			{"remote", "add", "origin", "git@github.com:acme/" + repo + ".git"},
+			{"add", "-A"},
+			{"commit", "-q", "-m", "initial " + repo},
+		} {
+			if _, err = git(ctx, dir, args...); err != nil {
+				return "", err
+			}
+		}
+
+		if stamps[repo], err = git(ctx, dir, "rev-parse", "HEAD"); err != nil {
+			return "", err
+		}
+	}
+
+	if err = stampTours(root, stamps); err != nil {
+		return "", err
+	}
+
+	worker := filepath.Join(root, "worker")
+
+	if err = copyOver(filepath.Join(testdata, "worker-v2"), worker); err != nil {
+		return "", fmt.Errorf("applying worker-v2: %w", err)
+	}
+
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "use timers/promises for sleep, and log failed purges"}} {
+		if _, err = git(ctx, worker, args...); err != nil {
+			return "", err
+		}
+	}
+
+	return root, nil
+}
+
+// copyOver copies the files under src into dst, replacing any that exist.
+// (os.CopyFS refuses to overwrite.)
+func copyOver(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(dst, rel)
+		if err = os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			return err
+		}
+
+		return os.WriteFile(target, data, 0o600)
+	})
+}
+
+// stampTours records the first commits as the stamps of every tour that names
+// these repos.
+func stampTours(root string, stamps map[string]string) error {
+	paths, err := tour.Discover(root)
+	if err != nil {
+		return fmt.Errorf("finding tours: %w", err)
+	}
+
+	for _, path := range paths {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return fmt.Errorf("reading %s: %w", path, readErr)
+		}
+
+		raw, parseErr := orderedjson.Parse(data)
+		if parseErr != nil || raw.Get("repos") == nil {
+			continue
+		}
+
+		for name, sha := range stamps {
+			if raw.Get("repos").Get(name) != nil {
+				tour.SetStamp(raw, name, sha)
+			}
+		}
+
+		if err = tour.Write(path, raw); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// git runs a git command with a fixed identity and clock, so the commits it
+// makes have the same SHAs every time.
+func git(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(),
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
+		"GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.com",
+		"GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.com",
+		"GIT_AUTHOR_DATE=2026-03-01T12:00:00Z", "GIT_COMMITTER_DATE=2026-03-01T12:00:00Z",
+	)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git %s in %s: %w: %s", strings.Join(args, " "), dir, err, out)
+	}
+
+	return strings.TrimSpace(string(out)), nil
 }
 
 // record opens a tour and resolves every step of it.

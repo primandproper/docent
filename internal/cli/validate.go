@@ -27,7 +27,7 @@ type validateReport struct {
 }
 
 func (a *application) newValidateCommand() *cobra.Command {
-	var asJSON, strict bool
+	var asJSON, strict, workingTree bool
 
 	cmd := &cobra.Command{
 		Use:   "validate [paths...]",
@@ -37,17 +37,18 @@ func (a *application) newValidateCommand() *cobra.Command {
 			"A path is a .tour file or a folder to search (default: the current folder).\n" +
 			"Exit status: 0 clean, 1 errors, 2 warnings only and --strict.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.validate(cmd.Context(), args, asJSON, strict)
+			return a.validate(cmd.Context(), args, asJSON, strict, workingTree)
 		},
 	}
 
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print diagnostics as JSON")
 	cmd.Flags().BoolVar(&strict, "strict", false, "exit 2 when there are warnings and no errors")
+	cmd.Flags().BoolVar(&workingTree, "working-tree", false, "check against files as they are on disk, not at each repo's ref")
 
 	return cmd
 }
 
-func (a *application) validate(ctx context.Context, args []string, asJSON, strict bool) error {
+func (a *application) validate(ctx context.Context, args []string, asJSON, strict, workingTree bool) error {
 	if len(args) == 0 {
 		args = []string{"."}
 	}
@@ -61,15 +62,19 @@ func (a *application) validate(ctx context.Context, args []string, asJSON, stric
 		}
 
 		report.Tours += len(paths)
+		services.Walker.SetWorkingTree(workingTree)
 
 		for _, path := range paths {
 			diags, tourErr := services.Validator.Tour(ctx, path)
 			if tourErr != nil {
+				services.Close()
 				return fmt.Errorf("validating %q: %w", path, tourErr)
 			}
 
 			report.Diagnostics = append(report.Diagnostics, diags...)
 		}
+
+		services.Close()
 	}
 
 	for i := range report.Diagnostics {

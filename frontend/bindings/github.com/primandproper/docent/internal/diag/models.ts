@@ -76,6 +76,34 @@ export enum Code {
     CodeAnchorMoved = "anchor-moved",
 
     /**
+     * CodeContentChanged: the anchored code differs from what the tour was
+     * written against.
+     */
+    CodeContentChanged = "content-changed",
+
+    /**
+     * CodeCodeRemoved: the anchored code no longer exists at the tracked ref.
+     */
+    CodeCodeRemoved = "code-removed",
+
+    /**
+     * CodeStampUnreachable: the repo's `stamp` commit isn't in the local
+     * repository, so drift can't be measured.
+     */
+    CodeStampUnreachable = "stamp-unreachable",
+
+    /**
+     * CodeRefMissing: a pinned ref isn't in the local repository.
+     */
+    CodeRefMissing = "ref-missing",
+
+    /**
+     * CodeRefFallback: a tracked branch no longer exists, so the default
+     * branch was used instead.
+     */
+    CodeRefFallback = "ref-fallback",
+
+    /**
      * CodeRepoUnknown: a step names a repo the tour's `repos` doesn't define.
      */
     CodeRepoUnknown = "repo-unknown",

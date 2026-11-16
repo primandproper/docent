@@ -72,6 +72,28 @@ export interface StepView {
     "repo": string;
 
     /**
+     * Ref is what the code is being read at.
+     */
+    "ref": walk$0.Ref | null;
+
+    /**
+     * Then is the anchored code as it was when the tour was written, when
+     * it has changed or been removed since.
+     */
+    "then": anchor$0.Then | null;
+
+    /**
+     * Removed is the commit that removed the code, when one was found.
+     */
+    "removed": gitsrc$0.Commit | null;
+
+    /**
+     * Permalink is a GitHub URL for the anchored lines at the commit being
+     * read, or "" when there isn't one.
+     */
+    "permalink": string;
+
+    /**
      * CloneCommand fetches the step's repo when it isn't checked out,
      * quoted for pasting into a shell.
      */
@@ -135,6 +157,16 @@ export interface TourView {
      */
     "steps": StepSummary[] | null;
     "vars": VarView[] | null;
+
+    /**
+     * Repos is where each of the tour's repos stands on this machine.
+     */
+    "repos": walk$0.RepoState[] | null;
+
+    /**
+     * WorkingTree is set while files are read from disk, not at each ref.
+     */
+    "workingTree": boolean;
 }
 
 /**

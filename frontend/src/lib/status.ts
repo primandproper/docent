@@ -34,3 +34,24 @@ export function statusLabel(location: Location): string {
       return '';
   }
 }
+
+/** How long ago something happened, in the largest unit that fits: "9 months". */
+export function ago(when: string | Date, now = new Date()): string {
+  const then = new Date(when);
+  // Go's zero time means "unknown".
+  if (Number.isNaN(then.getTime()) || then.getFullYear() < 1971) {
+    return '';
+  }
+  const days = Math.max(0, Math.floor((now.getTime() - then.getTime()) / 86_400_000));
+  const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`;
+  if (days < 1) {
+    return 'less than a day';
+  }
+  if (days < 60) {
+    return count(days, 'day');
+  }
+  if (days < 730) {
+    return count(Math.floor(days / 30), 'month');
+  }
+  return count(Math.floor(days / 365), 'year');
+}

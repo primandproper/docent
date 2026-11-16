@@ -7,5 +7,6 @@ export {
 
 export type {
     Location,
-    Range
+    Range,
+    Then
 } from "./models.js";

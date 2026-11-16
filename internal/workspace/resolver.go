@@ -112,6 +112,15 @@ func (r *resolver) Resolve(ctx context.Context, repo *tour.Repo) (*Checkout, err
 	return checkout, nil
 }
 
+// Reset forgets every answer, so a repo cloned since is found.
+func (r *resolver) Reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.cache = map[string]*Checkout{}
+	r.origins = map[string]string{}
+}
+
 func (r *resolver) find(ctx context.Context, repo *tour.Repo) *Checkout {
 	if dir, ok := r.config.Workspace.Repos[repo.Name]; ok && isDir(dir) {
 		return &Checkout{Found: true, Root: dir, How: ByWorkspaceMapping}

@@ -19,6 +19,7 @@ export type {
   Workspace,
 } from '../../bindings/github.com/primandproper/docent/internal/app';
 export type { Editor, Result as EditorResult } from '../../bindings/github.com/primandproper/docent/internal/editor';
+export type { RepoState, Ref } from '../../bindings/github.com/primandproper/docent/internal/walk';
 export type { Card } from '../../bindings/github.com/primandproper/docent/internal/links';
 export type { Location, Range } from '../../bindings/github.com/primandproper/docent/internal/anchor';
 export type { Diagnostic } from '../../bindings/github.com/primandproper/docent/internal/diag';
@@ -32,6 +33,12 @@ export interface Api {
   step(path: string, index: number): Promise<StepView>;
   /** Records a link variable picked in the app; returns the tour's variables as they now stand. */
   setVar(path: string, name: string, value: string): Promise<VarView[]>;
+  /** Reads code as it is on disk (true) or at each repo's ref (false). */
+  setWorkingTree(on: boolean): Promise<void>;
+  /** Runs git fetch in one of the open tour's repos. Call only once the reader has agreed. */
+  fetch(path: string, repo: string): Promise<void>;
+  /** Clones one of the open tour's missing repos. Call only once the reader has agreed. */
+  clone(path: string, repo: string): Promise<void>;
   editors(): Promise<Editor[]>;
   /** Opens a file step in an editor: the one with this id, or the reader's default when empty. */
   openInEditor(path: string, index: number, editorID: string): Promise<EditorResult>;

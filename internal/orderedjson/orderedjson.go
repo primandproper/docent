@@ -221,11 +221,15 @@ func (v *Value) Interface() any {
 	}
 }
 
-// Marshal writes the tree back out with the given indent, keeping key order.
-// Empty arrays and objects stay on one line.
-func (v *Value) Marshal(indent string) ([]byte, error) {
+// lineWidth is the column a container must fit within to be written on one line.
+const lineWidth = 100
+
+// Format writes the tree back out in Docent's canonical layout: two-space
+// indent, key order as found, and a container on one line when it holds only
+// scalars and fits. It changes no values.
+func (v *Value) Format() ([]byte, error) {
 	var buf bytes.Buffer
-	if err := v.write(&buf, indent, 0); err != nil {
+	if err := v.write(&buf, 0, true); err != nil {
 		return nil, err
 	}
 
@@ -234,7 +238,64 @@ func (v *Value) Marshal(indent string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (v *Value) write(buf *bytes.Buffer, indent string, depth int) error {
+// inline renders a container of scalars on one line, or reports that it has
+// nested containers and can't be.
+func (v *Value) inline() (string, bool) {
+	var buf bytes.Buffer
+
+	switch v.Kind {
+	case KindArray:
+		buf.WriteByte('[')
+
+		for i, e := range v.Elems {
+			if e.Kind == KindArray || e.Kind == KindObject {
+				return "", false
+			}
+
+			if i > 0 {
+				buf.WriteString(", ")
+			}
+
+			if err := e.write(&buf, 0, false); err != nil {
+				return "", false
+			}
+		}
+
+		buf.WriteByte(']')
+	case KindObject:
+		buf.WriteString("{ ")
+
+		for i, m := range v.Members {
+			if m.Value.Kind == KindArray || m.Value.Kind == KindObject {
+				return "", false
+			}
+
+			if i > 0 {
+				buf.WriteString(", ")
+			}
+
+			if err := writeString(&buf, m.Key); err != nil {
+				return "", false
+			}
+
+			buf.WriteString(": ")
+
+			if err := m.Value.write(&buf, 0, false); err != nil {
+				return "", false
+			}
+		}
+
+		buf.WriteString(" }")
+	default:
+		return "", false
+	}
+
+	return buf.String(), true
+}
+
+// write renders a value at a depth. column is how far along the line it
+// starts, which decides whether a small container still fits inline.
+func (v *Value) write(buf *bytes.Buffer, depth int, root bool) error {
 	switch v.Kind {
 	case KindNull:
 		buf.WriteString("null")
@@ -244,56 +305,8 @@ func (v *Value) write(buf *bytes.Buffer, indent string, depth int) error {
 		buf.WriteString(v.Num.String())
 	case KindString:
 		return writeString(buf, v.Str)
-	case KindArray:
-		if len(v.Elems) == 0 {
-			buf.WriteString("[]")
-			return nil
-		}
-
-		buf.WriteByte('[')
-
-		for i, e := range v.Elems {
-			if i > 0 {
-				buf.WriteByte(',')
-			}
-
-			newline(buf, indent, depth+1)
-
-			if err := e.write(buf, indent, depth+1); err != nil {
-				return err
-			}
-		}
-
-		newline(buf, indent, depth)
-		buf.WriteByte(']')
-	case KindObject:
-		if len(v.Members) == 0 {
-			buf.WriteString("{}")
-			return nil
-		}
-
-		buf.WriteByte('{')
-
-		for i, m := range v.Members {
-			if i > 0 {
-				buf.WriteByte(',')
-			}
-
-			newline(buf, indent, depth+1)
-
-			if err := writeString(buf, m.Key); err != nil {
-				return err
-			}
-
-			buf.WriteString(": ")
-
-			if err := m.Value.write(buf, indent, depth+1); err != nil {
-				return err
-			}
-		}
-
-		newline(buf, indent, depth)
-		buf.WriteByte('}')
+	case KindArray, KindObject:
+		return v.writeContainer(buf, depth, root)
 	default:
 		return fmt.Errorf("unknown JSON kind %d", v.Kind)
 	}
@@ -301,9 +314,120 @@ func (v *Value) write(buf *bytes.Buffer, indent string, depth int) error {
 	return nil
 }
 
-func newline(buf *bytes.Buffer, indent string, depth int) {
+func (v *Value) writeContainer(buf *bytes.Buffer, depth int, root bool) error {
+	if v.Kind == KindArray && len(v.Elems) == 0 {
+		buf.WriteString("[]")
+		return nil
+	}
+
+	if v.Kind == KindObject && len(v.Members) == 0 {
+		buf.WriteString("{}")
+		return nil
+	}
+
+	if !root {
+		// What is already on this line (indent, key) counts against the width.
+		used := buf.Len() - (bytes.LastIndexByte(buf.Bytes(), '\n') + 1)
+		if text, ok := v.inline(); ok && used+len(text) < lineWidth {
+			buf.WriteString(text)
+			return nil
+		}
+	}
+
+	if v.Kind == KindArray {
+		buf.WriteByte('[')
+
+		for i, e := range v.Elems {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+
+			newline(buf, depth+1)
+
+			if err := e.write(buf, depth+1, false); err != nil {
+				return err
+			}
+		}
+
+		newline(buf, depth)
+		buf.WriteByte(']')
+
+		return nil
+	}
+
+	buf.WriteByte('{')
+
+	for i, m := range v.Members {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+
+		newline(buf, depth+1)
+
+		if err := writeString(buf, m.Key); err != nil {
+			return err
+		}
+
+		buf.WriteString(": ")
+
+		if err := m.Value.write(buf, depth+1, false); err != nil {
+			return err
+		}
+	}
+
+	newline(buf, depth)
+	buf.WriteByte('}')
+
+	return nil
+}
+
+func newline(buf *bytes.Buffer, depth int) {
 	buf.WriteByte('\n')
-	buf.WriteString(strings.Repeat(indent, depth))
+	buf.WriteString(strings.Repeat("  ", depth))
+}
+
+// String returns a string value.
+func String(s string) *Value {
+	return &Value{Kind: KindString, Str: s}
+}
+
+// Object returns an object with the given members, in order.
+func Object(members ...Member) *Value {
+	return &Value{Kind: KindObject, Members: members}
+}
+
+// Set replaces an object member's value, or appends the member when the key
+// is new. It does nothing to a value that isn't an object.
+func (v *Value) Set(key string, value *Value) {
+	if v == nil || v.Kind != KindObject {
+		return
+	}
+
+	for i := range v.Members {
+		if v.Members[i].Key == key {
+			v.Members[i].Value = value
+			return
+		}
+	}
+
+	v.Members = append(v.Members, Member{Key: key, Value: value})
+}
+
+// Delete removes every member with the key from an object.
+func (v *Value) Delete(key string) {
+	if v == nil || v.Kind != KindObject {
+		return
+	}
+
+	kept := v.Members[:0]
+
+	for _, m := range v.Members {
+		if m.Key != key {
+			kept = append(kept, m)
+		}
+	}
+
+	v.Members = kept
 }
 
 func writeString(buf *bytes.Buffer, s string) error {

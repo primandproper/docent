@@ -63,7 +63,7 @@ func TestCorpus(T *testing.T) {
 			var want, got any
 			must.NoError(t, json.Unmarshal(trimBOM(data), &want))
 
-			out, marshalErr := parsed.Raw.Marshal("  ")
+			out, marshalErr := parsed.Raw.Format()
 			must.NoError(t, marshalErr)
 			must.NoError(t, json.Unmarshal(out, &got))
 			test.Eq(t, want, got)
