@@ -1,0 +1,242 @@
+[
+  {
+    "file": "Azure-Samples__mcp-agent-langchainjs__1-introduction.tour",
+    "repo": "Azure-Samples/mcp-agent-langchainjs",
+    "path": ".tours/1-introduction.tour",
+    "sha": "6273b58cc3f155a25d938174984da17531b7caec",
+    "license": "MIT",
+    "url": "https://github.com/Azure-Samples/mcp-agent-langchainjs/blob/6273b58cc3f155a25d938174984da17531b7caec/.tours/1-introduction.tour"
+  },
+  {
+    "file": "Azure-Samples__mcp-agent-langchainjs__2-designing-agents.tour",
+    "repo": "Azure-Samples/mcp-agent-langchainjs",
+    "path": ".tours/2-designing-agents.tour",
+    "sha": "6273b58cc3f155a25d938174984da17531b7caec",
+    "license": "MIT",
+    "url": "https://github.com/Azure-Samples/mcp-agent-langchainjs/blob/6273b58cc3f155a25d938174984da17531b7caec/.tours/2-designing-agents.tour"
+  },
+  {
+    "file": "Azure__azure-sdk-for-python__schema_classes.tour",
+    "repo": "Azure/azure-sdk-for-python",
+    "path": "sdk/ml/azure-ai-ml/.tours/schema_classes.tour",
+    "sha": "cc798341684824a1b83b15d44d92d236d2102cc2",
+    "license": "MIT",
+    "url": "https://github.com/Azure/azure-sdk-for-python/blob/cc798341684824a1b83b15d44d92d236d2102cc2/sdk/ml/azure-ai-ml/.tours/schema_classes.tour"
+  },
+  {
+    "file": "Birdhau5tech__telegram-song-scanner-active__main.tour",
+    "repo": "Birdhau5tech/telegram-song-scanner-active",
+    "path": ".tours/main.tour",
+    "sha": "cd5ce50c65bff7c0261377231f1b8d68a5e418ef",
+    "license": "MIT",
+    "url": "https://github.com/Birdhau5tech/telegram-song-scanner-active/blob/cd5ce50c65bff7c0261377231f1b8d68a5e418ef/.tours/main.tour"
+  },
+  {
+    "file": "CodeStitchOfficial__Advanced-Astro-i18n__image-optimization.tour",
+    "repo": "CodeStitchOfficial/Advanced-Astro-i18n",
+    "path": ".tours/image-optimization.tour",
+    "sha": "7b5d1d159acc7a34fb04f9673906d526e4adaaf4",
+    "license": "CC0-1.0",
+    "url": "https://github.com/CodeStitchOfficial/Advanced-Astro-i18n/blob/7b5d1d159acc7a34fb04f9673906d526e4adaaf4/.tours/image-optimization.tour"
+  },
+  {
+    "file": "DotNetKoans__DotNetKoans__contributing.tour",
+    "repo": "DotNetKoans/DotNetKoans",
+    "path": ".tours/contributing.tour",
+    "sha": "fbd14230aa6d45cb62d8a48184de5970cc9007cb",
+    "license": "MIT",
+    "url": "https://github.com/DotNetKoans/DotNetKoans/blob/fbd14230aa6d45cb62d8a48184de5970cc9007cb/.tours/contributing.tour"
+  },
+  {
+    "file": "DotNetKoans__DotNetKoans__introduction.tour",
+    "repo": "DotNetKoans/DotNetKoans",
+    "path": ".tours/introduction.tour",
+    "sha": "fbd14230aa6d45cb62d8a48184de5970cc9007cb",
+    "license": "MIT",
+    "url": "https://github.com/DotNetKoans/DotNetKoans/blob/fbd14230aa6d45cb62d8a48184de5970cc9007cb/.tours/introduction.tour"
+  },
+  {
+    "file": "HTBox__TwoWeeksReady__UITour.tour",
+    "repo": "HTBox/TwoWeeksReady",
+    "path": "2wr-app/code-tour/UITour.tour",
+    "sha": "204cf15b3f538713652a0414ccba835188dddd1a",
+    "license": "MIT",
+    "url": "https://github.com/HTBox/TwoWeeksReady/blob/204cf15b3f538713652a0414ccba835188dddd1a/2wr-app/code-tour/UITour.tour"
+  },
+  {
+    "file": "Hessesian__kmp-lsp__feature-contributor-guide.tour",
+    "repo": "Hessesian/kmp-lsp",
+    "path": ".tours/feature-contributor-guide.tour",
+    "sha": "c85b9c2be5de8427fd6f21f197ff629c8ab6a202",
+    "license": "MIT",
+    "url": "https://github.com/Hessesian/kmp-lsp/blob/c85b9c2be5de8427fd6f21f197ff629c8ab6a202/.tours/feature-contributor-guide.tour"
+  },
+  {
+    "file": "HomenShum__NodeRL__01-primary-user-flow.tour",
+    "repo": "HomenShum/NodeRL",
+    "path": ".tours/01-primary-user-flow.tour",
+    "sha": "5eae332f4ea9c38ded14db868def0a71056b013c",
+    "license": "MIT",
+    "url": "https://github.com/HomenShum/NodeRL/blob/5eae332f4ea9c38ded14db868def0a71056b013c/.tours/01-primary-user-flow.tour"
+  },
+  {
+    "file": "LefterisXris__CodeTour__sampleTour.tour",
+    "repo": "LefterisXris/CodeTour",
+    "path": ".tours/sampleTour.tour",
+    "sha": "bd7b39f883001eb955c58b8533e3e601646ac9d8",
+    "license": "MIT",
+    "url": "https://github.com/LefterisXris/CodeTour/blob/bd7b39f883001eb955c58b8533e3e601646ac9d8/.tours/sampleTour.tour"
+  },
+  {
+    "file": "OfficeDev__Microsoft-Teams-Samples__conversational-authorization.tour",
+    "repo": "OfficeDev/Microsoft-Teams-Samples",
+    "path": "samples/TeamsSDK/Archived/account-linking/csharp/.tours/conversational-authorization.tour",
+    "sha": "d39fbc7bf9df39338986cf20d8a161173d5ff9e1",
+    "license": "MIT",
+    "url": "https://github.com/OfficeDev/Microsoft-Teams-Samples/blob/d39fbc7bf9df39338986cf20d8a161173d5ff9e1/samples/TeamsSDK/Archived/account-linking/csharp/.tours/conversational-authorization.tour"
+  },
+  {
+    "file": "SAP-samples__kyma-runtime-samples__custom-resources---dapr.tour",
+    "repo": "SAP-samples/kyma-runtime-samples",
+    "path": "custom-component-dapr/.tours/custom-resources---dapr.tour",
+    "sha": "0f43cbe8064db39d6b4931e10787ad34672e76ed",
+    "license": "Apache-2.0",
+    "url": "https://github.com/SAP-samples/kyma-runtime-samples/blob/0f43cbe8064db39d6b4931e10787ad34672e76ed/custom-component-dapr/.tours/custom-resources---dapr.tour"
+  },
+  {
+    "file": "a11yproject__a11yproject.com__code-tour.tour",
+    "repo": "a11yproject/a11yproject.com",
+    "path": ".tours/code-tour.tour",
+    "sha": "db739f2bdb7cbfcde2f63a6a205b5a3c697c5434",
+    "license": "Apache-2.0",
+    "url": "https://github.com/a11yproject/a11yproject.com/blob/db739f2bdb7cbfcde2f63a6a205b5a3c697c5434/.tours/code-tour.tour"
+  },
+  {
+    "file": "bowenguan54-web__code-server-me__contributing.tour",
+    "repo": "bowenguan54-web/code-server-me",
+    "path": ".tours/contributing.tour",
+    "sha": "76635b23867e4d40ffaf1c91e0d0f031ef2d6cdb",
+    "license": "MIT",
+    "url": "https://github.com/bowenguan54-web/code-server-me/blob/76635b23867e4d40ffaf1c91e0d0f031ef2d6cdb/.tours/contributing.tour"
+  },
+  {
+    "file": "doctolib__code-tours-github__directory.tour",
+    "repo": "doctolib/code-tours-github",
+    "path": ".tours/directory.tour",
+    "sha": "a700bbd97ea6abe13d64dc0498db95ff72561764",
+    "license": "MIT",
+    "url": "https://github.com/doctolib/code-tours-github/blob/a700bbd97ea6abe13d64dc0498db95ff72561764/.tours/directory.tour"
+  },
+  {
+    "file": "eliotng__easy-spaces-lwc__2---object-agnostic-design.tour",
+    "repo": "eliotng/easy-spaces-lwc",
+    "path": ".tours/2---object agnostic design.tour",
+    "sha": "e337179a60db0d2e8fcc29463c0ca01252d47f67",
+    "license": "CC0-1.0",
+    "url": "https://github.com/eliotng/easy-spaces-lwc/blob/e337179a60db0d2e8fcc29463c0ca01252d47f67/.tours/2---object%20agnostic%20design.tour"
+  },
+  {
+    "file": "github__codespaces-codeql__codeql-tutorial.tour",
+    "repo": "github/codespaces-codeql",
+    "path": ".tours/codeql-tutorial.tour",
+    "sha": "e080809ceb57c511b74305b7c190e82be392de56",
+    "license": "MIT",
+    "url": "https://github.com/github/codespaces-codeql/blob/e080809ceb57c511b74305b7c190e82be392de56/.tours/codeql-tutorial.tour"
+  },
+  {
+    "file": "ignatandrei__RSCG_Examples__AOP.Logging.SourceGenerator.tour",
+    "repo": "ignatandrei/RSCG_Examples",
+    "path": "v2/.tours/AOP.Logging.SourceGenerator.tour",
+    "sha": "d03d56ff708a6bcd524e0a059828981ec08503b6",
+    "license": "MIT",
+    "url": "https://github.com/ignatandrei/RSCG_Examples/blob/d03d56ff708a6bcd524e0a059828981ec08503b6/v2/.tours/AOP.Logging.SourceGenerator.tour"
+  },
+  {
+    "file": "jtemporal__authing-your-genai__05-tool-calling-gmail.tour",
+    "repo": "jtemporal/authing-your-genai",
+    "path": ".tours/05-tool-calling-gmail.tour",
+    "sha": "f2708c779c88e91d73f16a1313fe0a9335f62445",
+    "license": "MIT",
+    "url": "https://github.com/jtemporal/authing-your-genai/blob/f2708c779c88e91d73f16a1313fe0a9335f62445/.tours/05-tool-calling-gmail.tour"
+  },
+  {
+    "file": "lynnlangit__learning-cloud__aws-tour.tour",
+    "repo": "lynnlangit/learning-cloud",
+    "path": "z_utilities/.tours/aws-tour.tour",
+    "sha": "bc0031bc3188115544d3e390f20a84f68bb693d7",
+    "license": "Apache-2.0",
+    "url": "https://github.com/lynnlangit/learning-cloud/blob/bc0031bc3188115544d3e390f20a84f68bb693d7/z_utilities/.tours/aws-tour.tour"
+  },
+  {
+    "file": "mheap__github-default-branch__github-default-branch.tour",
+    "repo": "mheap/github-default-branch",
+    "path": ".tours/github-default-branch.tour",
+    "sha": "ede32ac03f3fa09ce050c9bd6841af6ab0bb5509",
+    "license": "MIT",
+    "url": "https://github.com/mheap/github-default-branch/blob/ede32ac03f3fa09ce050c9bd6841af6ab0bb5509/.tours/github-default-branch.tour"
+  },
+  {
+    "file": "microsoft__FluidFramework__welcome.tour",
+    "repo": "microsoft/FluidFramework",
+    "path": ".tours/welcome.tour",
+    "sha": "15ca8cf6849a85e473831adbaa0f88ba4d86cb74",
+    "license": "MIT",
+    "url": "https://github.com/microsoft/FluidFramework/blob/15ca8cf6849a85e473831adbaa0f88ba4d86cb74/.tours/welcome.tour"
+  },
+  {
+    "file": "microsoft__codetour__intro.tour",
+    "repo": "microsoft/codetour",
+    "path": ".tours/intro.tour",
+    "sha": "29955a004445d3fd2ad5df35dd00f9cc0400ba7d",
+    "license": "MIT",
+    "url": "https://github.com/microsoft/codetour/blob/29955a004445d3fd2ad5df35dd00f9cc0400ba7d/.tours/intro.tour"
+  },
+  {
+    "file": "nsubordin81__blog.synapseflux.com__jekyll-blog-tour.tour",
+    "repo": "nsubordin81/blog.synapseflux.com",
+    "path": ".tours/jekyll-blog-tour.tour",
+    "sha": "ec625264d516e00107eee27b7a77939542b89cc1",
+    "license": "MIT",
+    "url": "https://github.com/nsubordin81/blog.synapseflux.com/blob/ec625264d516e00107eee27b7a77939542b89cc1/.tours/jekyll-blog-tour.tour"
+  },
+  {
+    "file": "pnp__sp-dev-fx-webparts__minesweeper-walkthrough.tour",
+    "repo": "pnp/sp-dev-fx-webparts",
+    "path": "samples/react-minesweeper/minesweeper-walkthrough.tour",
+    "sha": "52e10a165aeaaacd73bd25ebdf0028d047843dc7",
+    "license": "MIT",
+    "url": "https://github.com/pnp/sp-dev-fx-webparts/blob/52e10a165aeaaacd73bd25ebdf0028d047843dc7/samples/react-minesweeper/minesweeper-walkthrough.tour"
+  },
+  {
+    "file": "raeq__ibook2epub__1-the-round-trip.tour",
+    "repo": "raeq/ibook2epub",
+    "path": ".tours/1-the-round-trip.tour",
+    "sha": "3c8c857eac2d9b09669bab68b7e10963b431ac22",
+    "license": "MIT",
+    "url": "https://github.com/raeq/ibook2epub/blob/3c8c857eac2d9b09669bab68b7e10963b431ac22/.tours/1-the-round-trip.tour"
+  },
+  {
+    "file": "stdlib-js__stdlib__contributor-overview.tour",
+    "repo": "stdlib-js/stdlib",
+    "path": ".tours/contributor-overview.tour",
+    "sha": "b994f2e137ebebe2e88958f91aa97e672f7bfbf3",
+    "license": "Apache-2.0",
+    "url": "https://github.com/stdlib-js/stdlib/blob/b994f2e137ebebe2e88958f91aa97e672f7bfbf3/.tours/contributor-overview.tour"
+  },
+  {
+    "file": "tomkerkhove__promitor__add-a-new-scraper.tour",
+    "repo": "tomkerkhove/promitor",
+    "path": ".tours/add-a-new-scraper.tour",
+    "sha": "cc1469449df1baeada0ca868b1567c2e33f1a70c",
+    "license": "MIT",
+    "url": "https://github.com/tomkerkhove/promitor/blob/cc1469449df1baeada0ca868b1567c2e33f1a70c/.tours/add-a-new-scraper.tour"
+  },
+  {
+    "file": "trailheadapps__lwc-recipes-oss__intro-to-lwc.tour",
+    "repo": "trailheadapps/lwc-recipes-oss",
+    "path": ".tours/intro-to-lwc.tour",
+    "sha": "06bced15cb48e58682ba834af5c310ad23133f35",
+    "license": "CC0-1.0",
+    "url": "https://github.com/trailheadapps/lwc-recipes-oss/blob/06bced15cb48e58682ba834af5c310ad23133f35/.tours/intro-to-lwc.tour"
+  }
+]

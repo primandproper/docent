@@ -1,0 +1,433 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/primandproper/docent/main/schema/tour.v1.json",
+  "title": "Docent tour",
+  "description": "A CodeTour .tour file, optionally with Docent's extension fields. Every valid CodeTour file is a valid Docent tour: unknown properties are allowed everywhere, and the extension fields are only interpreted when `docent` is set.",
+  "type": "object",
+  "required": [
+    "title",
+    "steps"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "docent": {
+      "description": "Docent format version. Required to use any Docent extension field.",
+      "const": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "ref": {
+      "description": "CodeTour: the git ref (branch, tag or commit) the tour applies to.",
+      "type": "string"
+    },
+    "isPrimary": {
+      "type": "boolean"
+    },
+    "nextTour": {
+      "type": "string"
+    },
+    "stepMarker": {
+      "description": "CodeTour, VS Code specific. Kept in the file and ignored by Docent.",
+      "type": "string"
+    },
+    "when": {
+      "description": "CodeTour: a JavaScript expression. Kept in the file and never evaluated by Docent.",
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    }
+  },
+  "if": {
+    "required": [
+      "docent"
+    ]
+  },
+  "then": {
+    "$ref": "#/$defs/docentTour"
+  },
+  "$defs": {
+    "docentTour": {
+      "description": "The fields Docent adds to a CodeTour tour. They apply only when the tour sets `docent`.",
+      "type": "object",
+      "properties": {
+        "repos": {
+          "description": "The repos the tour touches, by logical name.",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/repo"
+          }
+        },
+        "vars": {
+          "description": "Template variables for link URLs.",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/var"
+          }
+        },
+        "map": {
+          "$ref": "#/$defs/map"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "generatedBy": {
+          "$ref": "#/$defs/generatedBy"
+        },
+        "reviewedBy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/review"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/docentStep"
+          }
+        }
+      }
+    },
+    "docentStep": {
+      "description": "The fields Docent adds to a CodeTour step. They apply only when the tour sets `docent`.",
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/slug"
+        },
+        "repo": {
+          "$ref": "#/$defs/name"
+        },
+        "body": {
+          "description": "A Markdown file, relative to the tour file, rendered instead of description.",
+          "type": "string",
+          "minLength": 1
+        },
+        "anchors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/anchor"
+          }
+        },
+        "mapFocus": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "visual": {
+          "type": "object"
+        },
+        "layout": {
+          "enum": [
+            "split",
+            "narrative",
+            "code"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contentHash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "description"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "directory": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "selection": {
+          "$ref": "#/$defs/selection"
+        },
+        "view": {
+          "description": "CodeTour, VS Code specific. Ignored by Docent.",
+          "type": "string"
+        },
+        "commands": {
+          "description": "CodeTour, VS Code specific. Kept in the file and never run by Docent.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "repo": {
+      "type": "object",
+      "required": [
+        "remote"
+      ],
+      "properties": {
+        "remote": {
+          "description": "Canonical git URL.",
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "description": "A branch to track, or a commit or tag to pin.",
+          "type": "string",
+          "minLength": 1
+        },
+        "stamp": {
+          "description": "The commit the tour was written or last reviewed against.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,64}$"
+        },
+        "subdir": {
+          "description": "A directory inside the repo that step paths are relative to.",
+          "type": "string"
+        }
+      }
+    },
+    "var": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string"
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "map": {
+      "type": "object",
+      "properties": {
+        "mermaid": {
+          "description": "Inline Mermaid flowchart source.",
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "description": "A Mermaid file, relative to the tour file.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "mermaid"
+          ]
+        },
+        {
+          "required": [
+            "file"
+          ]
+        }
+      ]
+    },
+    "generatedBy": {
+      "type": "object",
+      "required": [
+        "agent",
+        "at"
+      ],
+      "properties": {
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": [
+        "name",
+        "at"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ref": {
+          "type": "string"
+        }
+      }
+    },
+    "position": {
+      "type": "object",
+      "required": [
+        "line",
+        "character"
+      ],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "character": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/position"
+        },
+        "end": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "required": [
+        "label",
+        "file"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repo": {
+          "$ref": "#/$defs/name"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selection": {
+          "$ref": "#/$defs/selection"
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contentHash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "required": [
+        "kind",
+        "title",
+        "url"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "grafana",
+            "logs",
+            "traces",
+            "runbook",
+            "pr",
+            "issue",
+            "doc",
+            "url"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
