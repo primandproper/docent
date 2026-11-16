@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- A tour: a route that winds from one stop to the next, ending where you are now.
+       The group is shifted so the mark's bounding box is centred on the canvas. -->
+  <g transform="translate(-11 -24)">
+  <g fill="none" stroke="#ffffff" stroke-width="60" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 296 300 H 612 a 106 106 0 0 1 0 212 H 412 a 106 106 0 0 0 0 212 H 580" />
+  </g>
+  <circle cx="296" cy="300" r="62" fill="#ffffff" />
+  <circle cx="512" cy="512" r="62" fill="#ffffff" />
+  <circle cx="702" cy="724" r="84" fill="none" stroke="#ffffff" stroke-width="52" />
+  <circle cx="702" cy="724" r="26" fill="#ffffff" />
+  </g>
+</svg>
