@@ -155,6 +155,12 @@
             "code"
           ]
         },
+        "transition": {
+          "description": "An animation to play on arriving from the step before. call: that step's highlighted code calls the function this step highlights.",
+          "enum": [
+            "call"
+          ]
+        },
         "ref": {
           "type": "string",
           "minLength": 1

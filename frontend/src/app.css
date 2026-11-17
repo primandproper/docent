@@ -119,3 +119,49 @@ kbd {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/*
+ * The call transition (src/lib/dive.ts). Its pieces are made by hand, outside
+ * any component, so their styles are here.
+ */
+.diving {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The pane being left, kept on screen under or over the one arriving. */
+.dive-copy {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden !important;
+  pointer-events: none;
+}
+
+/* The function's pane is the one that opens or folds, so it is on top. */
+.dive-callee {
+  position: relative;
+  z-index: 1;
+}
+
+.dive-copy.dive-callee {
+  position: absolute;
+}
+
+.dive-name {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--bg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: pre;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+}

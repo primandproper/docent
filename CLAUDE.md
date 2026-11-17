@@ -75,6 +75,12 @@ make test_e2e ARGS=--ui # browser tests only
   it has stayed on screen (`READ_AFTER_MS`), but `Service` keeps the count and is what refuses: it resets when the
   tour file changes or the working-tree toggle flips, and it is never saved.
 - A step's code is read at its ref's commit, never from the checkout, unless the working-tree toggle is on.
+- The system map can be popped out into a second window (`/#map`, `MapWindow.svelte`). That window holds no state:
+  the main window tells it what to draw and it sends keys and clicks back (`MapMessage` in `api.ts`), so the tour is
+  only ever in one `Session`. `MapDiagram.svelte` is the map wherever it is shown.
+- The call transition (`"transition": "call"`, `src/lib/dive.ts`) is opt-in per step and only plays when
+  `findCall` finds the call in the highlight and it is on screen. Its styles are in `app.css` because its elements
+  are made outside any component.
 - Mermaid and ELK are loaded on first use. Arrowheads in the visuals use explicit markers, not `context-stroke`,
   which WebKit doesn't support.
 - Visual snapshots live in `frontend/e2e/visuals.spec.ts-snapshots`. Playwright only rewrites a snapshot that

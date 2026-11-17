@@ -33,6 +33,32 @@ export type { Diagnostic } from '../../bindings/github.com/primandproper/docent/
 export type { Entry } from '../../bindings/github.com/primandproper/docent/internal/gitsrc';
 export type { Step, Tour } from '../../bindings/github.com/primandproper/docent/internal/tour';
 
+/** What the map window needs to draw the map and follow the tour. */
+export interface MapState {
+  title: string;
+  /** The map's Mermaid source. */
+  map: string;
+  /** Each step's `mapFocus`, in step order. */
+  focus: string[][];
+  index: number;
+  zoomed: boolean;
+}
+
+/**
+ * What the main window and the map window say to each other. The main window
+ * holds all the state: the map window draws what it is told and asks for the
+ * rest.
+ */
+export type MapMessage =
+  /** Map window: I am open, tell me what to draw. */
+  | { kind: 'hello' }
+  /** Main window: here is the map, or null when there is none to show. */
+  | { kind: 'state'; state: MapState | null }
+  /** Map window: the reader asked for a step, the one after or before, or to zoom. */
+  | { kind: 'go'; index: number }
+  | { kind: 'step'; by: 1 | -1 }
+  | { kind: 'zoom' };
+
 export interface Api {
   workspace(): Promise<Workspace>;
   listTours(): Promise<TourSummary[]>;
@@ -71,6 +97,14 @@ export interface Api {
   launch(): Promise<{ tour: string; step: string }>;
   /** Asks the reader for a folder and opens it. Resolves to the workspace as it now is. */
   chooseFolder(): Promise<Workspace>;
+  /** Gives the system map a window of its own, floating above this one, or closes that window if it is open. */
+  toggleMapWindow(): Promise<void>;
+  /** Calls back when the map window has closed, whoever closed it. */
+  onMapWindowClosed(callback: () => void): () => void;
+  /** Says something to the other window. */
+  postMap(message: MapMessage): void;
+  /** Calls back with what the other window says. A window may hear itself. */
+  onMap(callback: (message: MapMessage) => void): () => void;
   /** Calls back when a docent:// link arrives while the app is running. */
   onOpen(callback: () => void): () => void;
   /** Calls back whenever a tour changes on disk. Returns a function that stops it. */

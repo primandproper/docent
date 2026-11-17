@@ -1,7 +1,18 @@
 // A recorded backend for browser tests: answers come from /fixture.json, which
 // cmd/tools/fixture writes by running the real Go service over a workspace.
 import { isExternalURL } from './api';
-import type { Api, Card, Entry, FileView, ReviewState, StepView, TourSummary, TourView, Workspace } from './api';
+import type {
+  Api,
+  Card,
+  Entry,
+  MapMessage,
+  FileView,
+  ReviewState,
+  StepView,
+  TourSummary,
+  TourView,
+  Workspace,
+} from './api';
 
 interface Fixture {
   workspace: Workspace;
@@ -30,6 +41,8 @@ declare global {
     docentFixture?: Fixture;
     docentChanged: () => void;
     docentLaunch?: { tour: string; step: string };
+    /** The map window, once it has been popped out. */
+    docentMapWindow?: Window | null;
     /** Reviews the app signed, as "name: path". */
     reviewed: string[];
   }
@@ -80,7 +93,37 @@ async function reviewState(path: string, view: TourView): Promise<ReviewState> {
   return { available, name: available ? READER : '', read: [...seen], blocker, ready: available && blocker === '' };
 }
 
+// The map window is a second page here, and the two talk over
+// BroadcastChannels, as they do over Wails events in the app.
+const IS_MAP_WINDOW = location.hash === '#map';
+const mapChannel = new BroadcastChannel('docent:map');
+const mapClosedChannel = new BroadcastChannel('docent:map-closed');
+
+if (IS_MAP_WINDOW) {
+  window.addEventListener('pagehide', () => mapClosedChannel.postMessage(null));
+}
+
 export const backend: Api = {
+  toggleMapWindow: async () => {
+    if (IS_MAP_WINDOW) {
+      window.close();
+    } else if (!window.docentMapWindow || window.docentMapWindow.closed) {
+      window.docentMapWindow = window.open('/#map', 'docent-map', 'popup,width=560,height=420');
+    } else {
+      window.docentMapWindow.close();
+    }
+  },
+  onMapWindowClosed: (callback) => {
+    const listener = () => callback();
+    mapClosedChannel.addEventListener('message', listener);
+    return () => mapClosedChannel.removeEventListener('message', listener);
+  },
+  postMap: (message) => mapChannel.postMessage(message),
+  onMap: (callback) => {
+    const listener = (event: MessageEvent) => callback(event.data as MapMessage);
+    mapChannel.addEventListener('message', listener);
+    return () => mapChannel.removeEventListener('message', listener);
+  },
   workspace: async () => (await fixture()).workspace,
   listTours: async () => (await fixture()).tours,
   openTour: async (path) => {

@@ -113,6 +113,7 @@
         {@const row = tokens[n - 1 - tokenStart]}
         <div
           class="row"
+          data-line={n}
           class:band={inBand(n)}
           class:band-start={n === range.startLine}
           class:band-end={range.startLine > 0 && n === range.endLine}

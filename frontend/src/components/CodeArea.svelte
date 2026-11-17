@@ -1,6 +1,10 @@
 <script lang="ts">
+  import { tick, untrack } from 'svelte';
   import { api, errorMessage } from '../lib/api';
-  import type { Editor, Entry } from '../lib/api';
+  import type { Editor, Entry, StepView } from '../lib/api';
+  import { findCall } from '../lib/calls';
+  import type { Excerpt } from '../lib/calls';
+  import { playCall } from '../lib/dive';
   import { session } from '../lib/session.svelte';
   import { statusLabel, toneOf } from '../lib/status';
   import { basename } from '../lib/steps';
@@ -25,6 +29,103 @@
 
   /** Whether the code as it was is shown beside the code as it is. */
   let comparing = $state(false);
+
+  // --- Following a call ---
+  //
+  // A step with `"transition": "call"` is about a function the step before
+  // calls. Moving between the two, either way, animates: but only when the
+  // tour asked, and only when the call is there on screen to start from.
+
+  let content: HTMLDivElement | undefined = $state();
+  /** The step the pane last settled on, and whether it was showing that step's own code. */
+  let settled: { index: number; step: StepView; own: boolean } | null = null;
+  /** The pane as it was when the reader left a step for the other end of a call. */
+  let left: {
+    from: number;
+    to: number;
+    excerpt: Excerpt;
+    copy: HTMLElement;
+    scrollTop: number;
+    scrollLeft: number;
+  } | null = null;
+  let endTransition: (() => void) | null = null;
+
+  function excerptOf(view: StepView): Excerpt {
+    return {
+      lines: view.content.split('\n'),
+      startLine: view.location.range.startLine,
+      endLine: view.location.range.endLine,
+    };
+  }
+
+  /** The live code pane, when the pane is showing exactly one. */
+  function livePane(): HTMLElement | null {
+    return content?.querySelector<HTMLElement>(':scope > .code') ?? null;
+  }
+
+  // Before the pane changes: if the reader is crossing a call the tour marked,
+  // keep a copy of what they are leaving.
+  $effect.pre(() => {
+    const to = session.index;
+    untrack(() => {
+      endTransition?.();
+      endTransition = null;
+      left = null;
+
+      const was = settled;
+      const steps = session.view?.tour?.steps ?? [];
+      const marked =
+        was !== null &&
+        ((to === was.index + 1 && steps[to]?.transition === 'call') ||
+          (to === was.index - 1 && steps[was.index]?.transition === 'call'));
+      const pane = livePane();
+      if (!was || !marked || !was.own || !pane) {
+        return;
+      }
+      left = {
+        from: was.index,
+        to,
+        excerpt: excerptOf(was.step),
+        copy: pane.cloneNode(true) as HTMLElement,
+        scrollTop: pane.scrollTop,
+        scrollLeft: pane.scrollLeft,
+      };
+    });
+  });
+
+  // After it has: play the transition if the call really is there.
+  $effect(() => {
+    const now = step;
+    const own = session.tab < 0 && !session.browsing && !comparing && now?.kind === 'file' && !now.unavailable;
+    if (!now) {
+      return;
+    }
+
+    untrack(() => {
+      settled = { index: now.index, step: now, own };
+      const leaving = left;
+      left = null;
+      if (!leaving || leaving.to !== now.index || !own) {
+        return;
+      }
+
+      const arriving = excerptOf(now);
+      const direction = leaving.to > leaving.from ? 'in' : 'out';
+      const call = direction === 'in' ? findCall(leaving.excerpt, arriving) : findCall(arriving, leaving.excerpt);
+      if (!call) {
+        return;
+      }
+
+      // Once the new pane has scrolled to its own highlight, and before anything is painted.
+      void tick().then(() => {
+        const pane = livePane();
+        if (!content || !pane || settled?.step !== now) {
+          return;
+        }
+        endTransition = playCall({ host: content, pane, ...leaving, call, direction });
+      });
+    });
+  });
 
   // --- Open in… ---
 
@@ -235,7 +336,7 @@
       </nav>
     {/if}
 
-    <div class="content">
+    <div class="content" bind:this={content}>
       {#if session.browsing}
         {#if session.browsing.unavailable}
           <div class="placeholder">{session.browsing.unavailable}</div>

@@ -1,5 +1,15 @@
 import { api, errorMessage } from './api';
-import type { FileView, ReviewState, StepView, TourSummary, TourView, VarView, Workspace } from './api';
+import type {
+  FileView,
+  MapMessage,
+  MapState,
+  ReviewState,
+  StepView,
+  TourSummary,
+  TourView,
+  VarView,
+  Workspace,
+} from './api';
 import { NavHistory } from './history';
 import { parseInternal } from './internal';
 import type { Place } from './history';
@@ -58,6 +68,8 @@ class Session {
       this.history.visit({ path: '', index: 0 });
       // Live reload: whoever is editing a tour sees it here as they save.
       api.onChanged(() => void this.reload());
+      api.onMap((message) => this.heard(message));
+      api.onMapWindowClosed(() => (this.mapPopped = false));
       // A docent:// link, now or later, opens its tour.
       api.onOpen(() => void this.launch());
       await this.launch();
@@ -288,6 +300,64 @@ class Session {
     this.mapLarge = !this.mapLarge;
     if (this.mapLarge) {
       this.mapShown = true;
+    }
+  }
+
+  /** Whether the map is zoomed in on what the current step focuses. */
+  mapZoom = $state(false);
+  /** Whether the map is in a window of its own instead of in this one. */
+  mapPopped = $state(false);
+
+  /** Zooms the map in on the current step, or back out. Zooming a hidden map shows it. */
+  toggleMapZoom(): void {
+    this.mapZoom = !this.mapZoom;
+    if (this.mapZoom) {
+      this.mapShown = true;
+    }
+  }
+
+  /** Pops the map out into its own window, or brings it back. */
+  async toggleMapWindow(): Promise<void> {
+    try {
+      await api.toggleMapWindow();
+    } catch (err) {
+      this.error = errorMessage(err);
+    }
+  }
+
+  /** What the map window should be drawing: null when the open tour has no map, or no tour is open. */
+  get mapState(): MapState | null {
+    const map = this.view?.map;
+    if (!map) {
+      return null;
+    }
+    return {
+      title: this.view?.tour?.title ?? '',
+      map,
+      focus: (this.view?.tour?.steps ?? []).map((step) => step.mapFocus ?? []),
+      index: this.index,
+      zoomed: this.mapZoom,
+    };
+  }
+
+  /** Tells the map window what to draw. */
+  publishMap(): void {
+    api.postMap({ kind: 'state', state: $state.snapshot(this.mapState) });
+  }
+
+  /** The map window asking for something. It holds no state of its own, so it can only ask. */
+  private heard(message: MapMessage): void {
+    if (message.kind === 'hello') {
+      this.mapPopped = true;
+      this.publishMap();
+    } else if (!this.mapPopped || !this.view) {
+      return;
+    } else if (message.kind === 'go' && Number.isInteger(message.index)) {
+      void this.go(message.index);
+    } else if (message.kind === 'step') {
+      void (message.by === 1 ? this.next() : this.previous());
+    } else if (message.kind === 'zoom') {
+      this.toggleMapZoom();
     }
   }
 

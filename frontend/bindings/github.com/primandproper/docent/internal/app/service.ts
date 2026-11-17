@@ -153,6 +153,15 @@ export function Step(path: string, index: number): $CancellablePromise<$models.S
 }
 
 /**
+ * ToggleMapWindow pops the system map out into a window of its own, or closes
+ * that window if it is open. It takes nothing from the caller: the window is
+ * always the app's own frontend.
+ */
+export function ToggleMapWindow(): $CancellablePromise<void> {
+    return $Call.ByID(1347010430);
+}
+
+/**
  * Workspace reports the folder the app was opened on.
  */
 export function Workspace(): $CancellablePromise<$models.Workspace> {

@@ -675,4 +675,18 @@ func TestService_Launch(T *testing.T) {
 		test.ErrorIs(t, err, ErrNoHost)
 		test.ErrorIs(t, s.requestTour(t.Context(), "/elsewhere/.tours/x.tour", ""), ErrNoHost)
 	})
+
+	T.Run("the map window is the host's to open and close", func(t *testing.T) {
+		t.Parallel()
+
+		s := newService()
+		test.ErrorIs(t, s.ToggleMapWindow(t.Context()), ErrNoMapWindow)
+
+		toggled := 0
+		s.setHost(&Host{ToggleMapWindow: func() { toggled++ }})
+
+		test.NoError(t, s.ToggleMapWindow(t.Context()))
+		test.NoError(t, s.ToggleMapWindow(t.Context()))
+		test.Eq(t, 2, toggled)
+	})
 }

@@ -11,7 +11,7 @@ import (
 
 var (
 	tourExtensionFields = []string{"repos", "vars", "map", "tags", "generatedBy", "reviewedBy"}
-	stepExtensionFields = []string{"id", "repo", "body", "anchors", "mapFocus", "links", "visual", "layout", "ref", "contentHash"}
+	stepExtensionFields = []string{"id", "repo", "body", "anchors", "mapFocus", "links", "visual", "layout", "transition", "ref", "contentHash"}
 )
 
 // Parse turns the bytes of a tour file into a Tour plus whatever is wrong with
@@ -165,6 +165,7 @@ func decodeStepExtensions(step *Step, raw *orderedjson.Value) {
 	step.Repo = str(raw, "repo")
 	step.Body = str(raw, "body")
 	step.Layout = str(raw, "layout")
+	step.Transition = str(raw, "transition")
 	step.Ref = str(raw, "ref")
 	step.ContentHash = str(raw, "contentHash")
 	step.MapFocus = strs(raw, "mapFocus")

@@ -34,7 +34,28 @@
       "file": "internal/tour/parse.go",
       "pattern": "^func Parse\\(",
       "line": 21,
-      "description": "A tour is parsed twice over: into an ordered JSON tree that remembers key order and unknown fields, and from that tree into the typed model.\n\nSchema problems become diagnostics, not failures. A tour with a wrong field still opens, as far as it can be read.\n\n> Docent's extension fields are only interpreted when the file sets `docent`. A plain CodeTour file that happens to use one of those names gets a warning and is otherwise left alone."
+      "description": "A tour is parsed twice over: into an ordered JSON tree that remembers key order and unknown fields, and from that tree into the typed model.\n\nSchema problems become diagnostics, not failures. A tour with a wrong field still opens, as far as it can be read."
+    },
+    {
+      "id": "opt-in",
+      "mapFocus": ["file", "e1", "parse"],
+      "title": "Extensions are opt-in",
+      "file": "internal/tour/parse.go",
+      "pattern": "integer\\(doc, \"docent\"\\) == FormatVersion",
+      "line": 54,
+      "selection": { "start": { "line": 54, "character": 1 }, "end": { "line": 59, "character": 2 } },
+      "description": "Docent's extension fields are only interpreted when the file sets `docent`. A plain CodeTour file that happens to use one of those names gets a warning and is otherwise left alone.\n\nNotice the call to `decodeTourExtensions`: that is the only way in. Press `j` to follow it."
+    },
+    {
+      "id": "tour-extensions",
+      "mapFocus": ["file", "e1", "parse"],
+      "transition": "call",
+      "title": "Reading the tour's own extensions",
+      "file": "internal/tour/parse.go",
+      "pattern": "^func decodeTourExtensions\\(",
+      "line": 128,
+      "selection": { "start": { "line": 128, "character": 1 }, "end": { "line": 161, "character": 2 } },
+      "description": "Everything Docent adds at the top of a tour is read here: its repos, link variables, the system map, and who drafted and reviewed it.\n\nThis step sets `\"transition\": \"call\"`, which is why it opened out of the line that called it. Press `k` to watch it fold back."
     },
     {
       "id": "confine",
