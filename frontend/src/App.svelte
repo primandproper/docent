@@ -12,6 +12,13 @@
     void session.init();
   });
 
+  // The map window draws what this one tells it, so tell it whenever that changes.
+  $effect(() => {
+    if (session.mapPopped) {
+      session.publishMap();
+    }
+  });
+
   function isTyping(target: EventTarget | null): boolean {
     return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
   }
@@ -33,11 +40,18 @@
       return;
     }
 
-    if (event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target) || goingTo) {
+    const walking = session.view !== null;
+
+    // Ctrl, not ⌘: ⌘Z is undo wherever there is text.
+    if (event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'z' && walking && !goingTo) {
+      void session.toggleMapWindow();
+      event.preventDefault();
       return;
     }
 
-    const walking = session.view !== null;
+    if (event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target) || goingTo) {
+      return;
+    }
 
     if (event.key === '/') {
       if (walking) {
@@ -55,6 +69,8 @@
       session.toggleLargeMap();
     } else if (event.key === 'm') {
       session.mapShown = !session.mapShown;
+    } else if (event.key === 'z') {
+      session.toggleMapZoom();
     } else if (event.key === 'O') {
       session.editorMenu = !session.editorMenu;
     } else if (event.key === 'o') {

@@ -18,7 +18,7 @@ test.describe('tour picker', () => {
     await page.goto('/');
 
     const tours = page.locator('.tour');
-    await expect(tours).toHaveCount(5);
+    await expect(tours).toHaveCount(6);
     await expect(tours.nth(0)).toContainText(MAIN);
     await expect(tours.nth(0)).toContainText('1 problem');
     await expect(tours.nth(0)).toContainText('6 steps');
@@ -33,7 +33,7 @@ test.describe('tour picker', () => {
 
   test('filters with / and opens with the keyboard', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('.tour')).toHaveCount(5);
+    await expect(page.locator('.tour')).toHaveCount(6);
 
     await page.keyboard.press('/');
     await expect(page.getByRole('searchbox')).toBeFocused();
@@ -465,6 +465,85 @@ test.describe('the system map', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Reading an item' })).toBeVisible();
   });
 
+  function viewBox(target: Page) {
+    return target.locator('.diagram svg').evaluate((svg) => svg.getAttribute('viewBox')!.split(' ').map(Number));
+  }
+
+  test('z zooms in on what the step is about, and follows the tour from there', async ({ page }) => {
+    await openDraft(page);
+    const map = page.getByRole('region', { name: 'System map' });
+    const whole = await viewBox(page);
+
+    await page.keyboard.press('z');
+    await expect(map.getByRole('button', { name: 'Zoom' })).toHaveAttribute('aria-pressed', 'true');
+    // The animation settles on a smaller part of the diagram, with the step's nodes in it.
+    await expect.poll(async () => (await viewBox(page))[2]).toBeLessThan(whole[2]);
+    await page.waitForTimeout(500);
+    const first = await viewBox(page);
+    const frame = (await map.locator('svg').boundingBox())!;
+    const api = (await node(page, 'api').boundingBox())!;
+    expect(api.x).toBeGreaterThanOrEqual(frame.x);
+    expect(api.x + api.width).toBeLessThanOrEqual(frame.x + frame.width);
+
+    // The next step is about another part of the system, and the zoom goes there.
+    await page.keyboard.press('j');
+    await expect(node(page, 'worker')).toHaveClass(/current/);
+    await expect.poll(() => viewBox(page)).not.toEqual(first);
+    await page.waitForTimeout(500);
+    const worker = (await node(page, 'worker').boundingBox())!;
+    expect(worker.x).toBeGreaterThanOrEqual(frame.x);
+    expect(worker.x + worker.width).toBeLessThanOrEqual(frame.x + frame.width);
+
+    // A step about one node closes right in on it.
+    await node(page, 'billing').click();
+    await expect.poll(async () => (await viewBox(page))[2]).toBeLessThan(whole[2] / 2);
+
+    // And back out to all of it.
+    await page.keyboard.press('z');
+    await expect.poll(() => viewBox(page)).toEqual(whole);
+    await expect(map.getByRole('button', { name: 'Zoom' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('⌃Z pops it out into a window that still follows the tour', async ({ page, context }) => {
+    await openDraft(page);
+    const docked = page.getByRole('region', { name: 'System map' });
+
+    const [popup] = await Promise.all([context.waitForEvent('page'), page.keyboard.press('Control+z')]);
+    const popped = (id: string) => popup.locator(`g.node[id*="-flowchart-${id}-"]`);
+
+    // The map moves: it is in its own window, and no longer in this one.
+    await expect(popped('api')).toHaveClass(/current/);
+    await expect(docked).toHaveCount(0);
+
+    // Stepping in the main window moves the highlight in the map window.
+    await page.keyboard.press('j');
+    await expect(popped('worker')).toHaveClass(/current/);
+    await expect(popped('api')).toHaveClass(/visited/);
+
+    // z in the main window zooms the map where it now is.
+    const whole = await viewBox(popup);
+    await page.keyboard.press('z');
+    await expect.poll(async () => (await viewBox(popup))[2]).toBeLessThan(whole[2]);
+    await page.keyboard.press('z');
+
+    // The map window can drive the tour too: a node, or the same keys.
+    await popped('billing').click();
+    await expect(currentStep(page)).toContainText('Where reads are metered');
+    await popup.keyboard.press('k');
+    await expect(currentStep(page)).toContainText('Retries in the worker');
+    await expect(popped('worker')).toHaveClass(/current/);
+
+    // Leaving the tour leaves the window with nothing to draw.
+    await page.keyboard.press('Escape');
+    await expect(popup.getByText('Open a tour with a system map')).toBeVisible();
+    await page.getByRole('button', { name: /Reading an item/ }).click();
+    await expect(popped('api')).toHaveClass(/current/);
+
+    // Closing it puts the map back where it was.
+    await Promise.all([popup.waitForEvent('close'), popup.keyboard.press('Escape').catch(() => undefined)]);
+    await expect(docked.locator('svg')).toBeVisible();
+  });
+
   test('a tour without a map has no map panel or button', async ({ page }) => {
     await openMain(page);
 
@@ -587,6 +666,80 @@ test.describe('the code pane', () => {
 
     await page.getByRole('button', { name: 'Back to the step' }).click();
     await expect(page.locator('.row.band')).toContainText('func (h *Handler) GetItem');
+  });
+});
+
+test.describe('following a call', () => {
+  /** Records the name each call transition carries, as it plays. */
+  async function open(page: Page): Promise<() => Promise<string[]>> {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Following a call/ }).click();
+    await expect(page.locator('.row.band-start .gutter')).toHaveText('9');
+    await page.evaluate(() => {
+      const played: string[] = [];
+      (window as unknown as { played: string[] }).played = played;
+      new MutationObserver((records) => {
+        for (const record of records) {
+          for (const added of record.addedNodes) {
+            if (added instanceof HTMLElement && added.classList.contains('dive-name')) {
+              played.push(added.textContent ?? '');
+            }
+          }
+        }
+      }).observe(document.body, { subtree: true, childList: true });
+    });
+    return () => page.evaluate(() => (window as unknown as { played: string[] }).played);
+  }
+
+  test('a step that asks for it opens out of the call, and folds back into it', async ({ page }) => {
+    const played = await open(page);
+
+    await page.keyboard.press('j');
+    await expect.poll(played).toEqual(['respond']);
+    // It ends with the pane as it would have been anyway.
+    await expect(page.locator('.dive-name, .dive-copy')).toHaveCount(0);
+    await expect(page.locator('.content > .code')).toHaveCount(1);
+    await expect(page.locator('.row.band-start .gutter')).toHaveText('19');
+
+    await page.keyboard.press('k');
+    await expect.poll(played).toEqual(['respond', 'respond']);
+    await expect(page.locator('.dive-name, .dive-copy')).toHaveCount(0);
+    await expect(page.locator('.row.band-start .gutter')).toHaveText('9');
+  });
+
+  test('a step that did not ask simply appears', async ({ page }) => {
+    const played = await open(page);
+
+    await page.locator('.step').nth(2).click();
+    await expect(page.locator('.row.band .gutter')).toHaveText('15');
+    await page.keyboard.press('k');
+    await expect(page.locator('.row.band-start .gutter')).toHaveText('19');
+    await page.waitForTimeout(200);
+    expect(await played()).toEqual([]);
+  });
+
+  test('it only plays when the call is on screen', async ({ page }) => {
+    const played = await open(page);
+
+    await page.locator('.content > .code').evaluate((pane) => (pane.scrollTop = pane.scrollHeight));
+    await page.setViewportSize({ width: 1440, height: 260 });
+    await page.locator('.content > .code').evaluate((pane) => (pane.scrollTop = 0));
+    await expect(page.locator('.row[data-line="16"]')).not.toBeInViewport();
+
+    await page.keyboard.press('j');
+    await expect(page.locator('.row.band-start .gutter')).toHaveText('19');
+    await page.waitForTimeout(200);
+    expect(await played()).toEqual([]);
+  });
+
+  test('a reader who asked for less motion gets none', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const played = await open(page);
+
+    await page.keyboard.press('j');
+    await expect(page.locator('.row.band-start .gutter')).toHaveText('19');
+    await page.waitForTimeout(200);
+    expect(await played()).toEqual([]);
   });
 });
 

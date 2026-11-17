@@ -1,0 +1,34 @@
+{
+  "docent": 1,
+  "title": "Following a call",
+  "description": "From a handler into the helper it calls.",
+  "steps": [
+    {
+      "id": "list-items",
+      "title": "The list handler",
+      "file": "api/internal/http/list.go",
+      "pattern": "^func \\(h \\*Handler\\) ListItems",
+      "line": 9,
+      "selection": { "start": { "line": 9, "character": 1 }, "end": { "line": 17, "character": 2 } },
+      "description": "Notice that it ends by calling `respond`."
+    },
+    {
+      "id": "respond",
+      "title": "Writing the response",
+      "transition": "call",
+      "file": "api/internal/http/list.go",
+      "pattern": "^func respond",
+      "line": 20,
+      "selection": { "start": { "line": 19, "character": 1 }, "end": { "line": 24, "character": 2 } },
+      "description": "`respond` sets the content type and encodes the value."
+    },
+    {
+      "id": "get-item",
+      "title": "A step that asked for nothing",
+      "file": "api/internal/http/items.go",
+      "pattern": "^func \\(h \\*Handler\\) GetItem",
+      "line": 15,
+      "description": "No transition here: the step simply appears."
+    }
+  ]
+}

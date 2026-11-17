@@ -136,12 +136,14 @@ type (
 		Repo        string          `json:"repo"`
 		Body        string          `json:"body"`
 		Layout      string          `json:"layout"`
-		Ref         string          `json:"ref"`
-		ContentHash string          `json:"contentHash"`
-		Anchors     []Anchor        `json:"anchors"`
-		MapFocus    []string        `json:"mapFocus"`
-		Links       []Link          `json:"links"`
-		Line        int             `json:"line"`
+		// Transition asks for an animation on arriving from the step before.
+		Transition  string   `json:"transition"`
+		Ref         string   `json:"ref"`
+		ContentHash string   `json:"contentHash"`
+		Anchors     []Anchor `json:"anchors"`
+		MapFocus    []string `json:"mapFocus"`
+		Links       []Link   `json:"links"`
+		Line        int      `json:"line"`
 	}
 )
 

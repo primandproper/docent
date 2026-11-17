@@ -109,6 +109,7 @@ Run `docent schema` for the full JSON Schema.
 | `links` | Link cards: `{ "kind", "title", "url", "description"? }`. |
 | `mapFocus` | Ids of the map nodes and edges this step is about. Give every step that touches a system one. |
 | `visual` | One animated visual, shown above the narrative. See below. |
+| `transition` | `"call"` when the step before highlights code that calls the function this step highlights. Moving between the two then animates: the function opens out of its call site. See below. |
 | `ref` | Read this one step at a different ref, to show code as it was before a change. |
 
 A step with none of `file`, `directory` or `uri` is content only: the narrative takes the whole window, like a slide.
@@ -135,6 +136,24 @@ It prints the status, the file and the anchored lines. `ok` is the only acceptab
 `moved` means `line` is wrong: set it to the line the output shows. `ambiguous` means the pattern matches several
 lines and there is no `line`. `missing` means the file, the repo or the pattern wasn't found, and the output says
 which.
+
+## Following a call
+
+A common pair of steps: one highlights a function and says "notice that it calls `stuff`", and the next is about
+`stuff`. Set `"transition": "call"` on the second step and the app animates the move between them: the body of
+`stuff` opens out of the line that calls it, and folds back into it when the reader steps back.
+
+```json
+{ "id": "whatever", "file": "whatever.go", "pattern": "^func whatever", "line": 3, "selection": { ... } },
+{ "id": "stuff", "transition": "call", "file": "stuff.go", "pattern": "^func stuff", "line": 3, "selection": { ... } }
+```
+
+It is opt-in, and it only plays when all of this holds; otherwise the step simply appears:
+
+- The step before highlights code (`line` or `selection`) that contains the call, written as `stuff(`.
+- This step's highlight starts at the definition: its first line that isn't a comment names `stuff`.
+- The call is on screen when the reader leaves, so highlight a range short enough to fit, or one where the call comes
+  early.
 
 ## The system map
 

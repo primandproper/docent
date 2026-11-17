@@ -17,7 +17,7 @@
   const hasPane = $derived(layout !== 'narrative' && (kind === 'file' || kind === 'directory' || hasAnchors));
   const onlyCode = $derived(layout === 'code' && hasPane);
   // Only a tour with a map can show one large.
-  const mapLarge = $derived(session.mapLarge && session.mapShown && !!session.view?.map);
+  const mapLarge = $derived(session.mapLarge && session.mapShown && !session.mapPopped && !!session.view?.map);
   const unreviewed = $derived(!!tour?.generatedBy && (tour.reviewedBy ?? []).length === 0);
   const reviewers = $derived((tour?.reviewedBy ?? []).map((review) => review.name));
 
@@ -65,7 +65,7 @@
         class="toggle"
         aria-pressed={session.mapShown}
         onclick={() => (session.mapShown = !session.mapShown)}
-        title="Show or hide the system map (m)"
+        title="Show or hide the system map (m). z zooms it in on this step, ⌃Z gives it a window of its own."
       >
         Map
       </button>
@@ -113,7 +113,7 @@
     {/if}
 
     <div class="reading" hidden={onlyCode && !mapLarge}>
-      {#if session.mapShown && !mapLarge}
+      {#if session.mapShown && !mapLarge && !session.mapPopped}
         <SystemMap />
       {/if}
       <Narrative wide={!hasPane && !mapLarge} />

@@ -55,10 +55,10 @@ The highlighted map node and the highlighted code band always describe the same 
 - **Step rail (left):** numbered step titles with a repo badge and a drift indicator per step.
 - **Code pane (center):** read-only and syntax highlighted, scrolled to the anchor, with the anchored lines highlighted. A breadcrumb reads `repo › path › line` with the ref. Extra anchors on a step show as tabs (for example, "handler", "caller", "test"). A file-tree drawer browses the step's repo. Buttons: **Open in editor** and **Copy permalink** (a forge URL at the pinned ref).
 - **Narrative pane (right):** rendered Markdown with inline Mermaid diagrams, animated visuals and link cards.
-- **System map (collapsible, docked above the narrative):** one diagram per tour. The current step's nodes and edges are highlighted and visited ones are dimmed. Clicking a node jumps to the first step that focuses it.
+- **System map (collapsible, docked above the narrative):** one diagram per tour. The current step's nodes and edges are highlighted and visited ones are dimmed. Clicking a node jumps to the first step that focuses it. It can zoom in on what the current step focuses and follow the tour from there, take the centre pane, or be popped out into a window of its own that floats above the main one and still follows, and drives, the tour.
 - **Content-only steps** hide the code pane and give the narrative full width, which works like a slide.
 
-**Keyboard:** `j`/`k` or arrow keys move between steps, `g` goes to a step, `o` opens in editor, `m` toggles the map, `/` searches tours, `⌘R` reloads, and `⌘[`/`⌘]` move back and forward through navigation history.
+**Keyboard:** `j`/`k` or arrow keys move between steps, `g` goes to a step, `o` opens in editor, `m` toggles the map, `z` zooms it in on the current step, `⌃Z` pops it out into its own window, `/` searches tours, `⌘R` reloads, and `⌘[`/`⌘]` move back and forward through navigation history.
 
 **Live reload.** Docent watches tour files and their referenced Markdown. On change, it re-parses and keeps your position by step `id` (by index if there's no id). This makes the app the preview loop for both agents and people editing by hand.
 
@@ -131,6 +131,7 @@ A tour is a CodeTour `.tour` JSON file with additive, flat fields; one file per 
 | `links` | Link\[\] | Link cards: `{kind, title, url, description?}`. `kind` is one of `grafana`, `logs`, `traces`, `runbook`, `pr`, `issue`, `doc` or `url`. |
 | `visual` | Visual | One structured visual (same schema as the `docent-*` fences) rendered above the narrative. |
 | `layout` | `split` \| `narrative` \| `code` | Pane-layout override. |
+| `transition` | `call` | Opt-in animation on arriving from the step before: that step's highlighted code calls the function this step highlights, and the function opens out of its call site. It only plays when the call is on screen. |
 | `ref` | string | A per-step ref override, for example to show code before a change. |
 
 **Example**

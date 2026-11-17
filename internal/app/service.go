@@ -54,6 +54,8 @@ var (
 	ErrNotAFile = errors.New("this step doesn't point at a file")
 	// ErrNoHost is returned when the folder can't be changed from here.
 	ErrNoHost = errors.New("the folder can't be changed from inside the app")
+	// ErrNoMapWindow is returned when there is no desktop shell to open the map window.
+	ErrNoMapWindow = errors.New("the map can't be given a window of its own here")
 	// ErrBadLink is returned for a docent:// link that isn't one Docent understands.
 	ErrBadLink = errors.New("not a docent link")
 	// ErrNotCloneable is returned for a repo that is already here, or whose
@@ -256,6 +258,9 @@ type (
 		// Rooted is told when the folder changes, to move the file watcher
 		// and retitle the window.
 		Rooted func(root string, services *core.Core)
+		// ToggleMapWindow opens the window that shows only the system map, or
+		// closes it if it is open.
+		ToggleMapWindow func()
 	}
 
 	Service struct {
@@ -394,6 +399,26 @@ func (s *Service) ChooseFolder(ctx context.Context) (Workspace, error) {
 	}
 
 	return s.Workspace(), nil
+}
+
+// ToggleMapWindow pops the system map out into a window of its own, or closes
+// that window if it is open. It takes nothing from the caller: the window is
+// always the app's own frontend.
+func (s *Service) ToggleMapWindow(ctx context.Context) error {
+	_, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	s.mu.Lock()
+	host := s.host
+	s.mu.Unlock()
+
+	if host == nil || host.ToggleMapWindow == nil {
+		return observability.PrepareAndLogError(ErrNoMapWindow, s.logger, span, "toggling the map window")
+	}
+
+	host.ToggleMapWindow()
+
+	return nil
 }
 
 // openLink handles a docent://open link, which names a tour and a step in its query. The link is untrusted:

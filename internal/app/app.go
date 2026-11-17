@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
+	"sync"
 
 	"github.com/primandproper/docent/internal/core"
 	"github.com/primandproper/docent/internal/editor"
@@ -24,6 +25,13 @@ const ChangedEvent = "docent:changed"
 
 // OpenEvent is emitted to the frontend when a docent:// link asks for a tour.
 const OpenEvent = "docent:open"
+
+// MapEvent carries messages between the main window and the map window. Only
+// the frontend emits it; Wails delivers it to every window.
+const MapEvent = "docent:map"
+
+// MapClosedEvent is emitted to the frontend when the map window closes.
+const MapClosedEvent = "docent:map-closed"
 
 // Options configure the desktop app.
 type Options struct {
@@ -128,8 +136,56 @@ func Run(ctx context.Context, opts *Options) error {
 	}
 	watch(opts.Root, services)
 
+	// The system map can be popped out into a window of its own, which floats
+	// above the main one. It is the same frontend at another URL, and it is
+	// told what to draw by the main window, over MapEvent.
+	var (
+		mapWindow   *application.WebviewWindow
+		mapWindowMu sync.Mutex
+	)
+
+	toggleMapWindow := func() {
+		mapWindowMu.Lock()
+		existing := mapWindow
+		mapWindowMu.Unlock()
+
+		if existing != nil {
+			existing.Close()
+			return
+		}
+
+		popup := wails.Window.NewWithOptions(application.WebviewWindowOptions{
+			Name:             "map",
+			Title:            "System map",
+			Width:            560,
+			Height:           420,
+			MinWidth:         240,
+			MinHeight:        160,
+			AlwaysOnTop:      true,
+			BackgroundColour: application.NewRGB(24, 24, 27),
+			URL:              mapWindowURL,
+		})
+
+		popup.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+			mapWindowMu.Lock()
+			mapWindow = nil
+			mapWindowMu.Unlock()
+
+			wails.Event.Emit(MapClosedEvent)
+		})
+
+		mapWindow = popup
+	}
+
+	// The map window is an accessory of the main one: it doesn't keep the app
+	// open once the main window is closed.
+	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+		wails.Quit()
+	})
+
 	service.setHost(&Host{
-		Rebuild: rebuild,
+		Rebuild:         rebuild,
+		ToggleMapWindow: toggleMapWindow,
 		ChooseFolder: func() (string, error) {
 			return wails.Dialog.OpenFile().
 				SetTitle("Open a folder of tours").
@@ -166,6 +222,10 @@ func Run(ctx context.Context, opts *Options) error {
 
 	return nil
 }
+
+// mapWindowURL is where the frontend draws only the system map. It must match
+// the check in frontend/src/main.ts.
+const mapWindowURL = "/#map"
 
 func title(root string) string {
 	if root == "" {

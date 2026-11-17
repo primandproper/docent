@@ -101,6 +101,11 @@ export interface Step {
     "repo": string;
     "body": string;
     "layout": string;
+
+    /**
+     * Transition asks for an animation on arriving from the step before.
+     */
+    "transition": string;
     "ref": string;
     "contentHash": string;
     "anchors": Anchor[] | null;

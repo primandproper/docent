@@ -3,7 +3,7 @@
 import { Browser, Clipboard, Events } from '@wailsio/runtime';
 import { Service } from '../../bindings/github.com/primandproper/docent/internal/app';
 import { isExternalURL } from './api';
-import type { Api } from './api';
+import type { Api, MapMessage } from './api';
 
 function required<T>(value: T | null, what: string): T {
   if (value === null) {
@@ -36,6 +36,12 @@ export const backend: Api = {
   onOpen: (callback) => Events.On('docent:open' as never, callback),
   // Must match app.ChangedEvent in Go.
   onChanged: (callback) => Events.On('docent:changed' as never, callback),
+  toggleMapWindow: () => Service.ToggleMapWindow(),
+  // Must match app.MapClosedEvent in Go.
+  onMapWindowClosed: (callback) => Events.On('docent:map-closed' as never, callback),
+  // Must match app.MapEvent in Go. Wails hands an event from one window to all of them.
+  postMap: (message) => void Events.Emit('docent:map', message),
+  onMap: (callback) => Events.On('docent:map', (event) => callback(event.data as MapMessage)),
   openExternal: async (url) => {
     if (!isExternalURL(url)) {
       throw new Error(`refusing to open ${url}: only http and https links leave the app`);

@@ -43,6 +43,7 @@ const docentTour = `{
       ],
       "visual": { "type": "sequence", "participants": ["api", "queue"], "messages": [{ "from": "api", "to": "queue", "label": "enqueue" }] },
       "layout": "split",
+      "transition": "call",
       "ref": "v2.0.0"
     }
   ]
@@ -90,6 +91,7 @@ func TestParse(T *testing.T) {
 		test.Eq(t, "test", step.Anchors[0].Label)
 		test.Eq(t, "grafana", step.Links[0].Kind)
 		test.Eq(t, "split", step.Layout)
+		test.Eq(t, "call", step.Transition)
 		test.Eq(t, "v2.0.0", step.Ref)
 		test.StrContains(t, string(step.Visual), `"type":"sequence"`)
 		test.Eq(t, "write-path", parsed.StepLabel(0))
