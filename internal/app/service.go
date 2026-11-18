@@ -504,6 +504,7 @@ func (s *Service) ListTours(ctx context.Context) ([]TourSummary, error) {
 	// Listing is what a reload does first, so this is where a fetch or a new
 	// commit since the last look gets noticed.
 	s.svc().Walker.Reset()
+	s.svc().Validator.Reset()
 
 	paths, err := s.discover(ctx)
 	if err != nil {

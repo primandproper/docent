@@ -29,9 +29,10 @@
         void session.reload();
       } else if (event.key === 'o') {
         void session.chooseFolder();
-      } else if (event.key === '[') {
+      } else if (event.key === '[' || (event.key === 'ArrowLeft' && !isTyping(event.target))) {
+        // In a text field ⌘← and ⌘→ move the caret to the ends of the line.
         void session.back();
-      } else if (event.key === ']') {
+      } else if (event.key === ']' || (event.key === 'ArrowRight' && !isTyping(event.target))) {
         void session.forward();
       } else {
         return;

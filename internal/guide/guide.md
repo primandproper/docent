@@ -220,6 +220,11 @@ Only `http` and `https` URLs are allowed, plus Docent's own:
 
 Both work as link cards and as ordinary Markdown links in a body: `[the write handler](docent:step/write-path)`.
 
+When a step leans on something another tour explains (a feature run by a cron job, and the tour on how cron jobs are
+managed), link to that tour instead of retelling it: `[how cron jobs are scheduled](docent:tour/cron.tour#scheduling)`.
+The reader goes back with ⌘[ and lands on the step they left. `docent validate` checks that the tour and the step
+exist.
+
 Cards can also be written inside a body, where they appear in the flow of the text:
 
 ````
@@ -276,6 +281,10 @@ a step anchors into. For each listed tour:
 | `map-focus-unknown` | A `mapFocus` id isn't a node, or an edge named with `id@`, in the map. |
 | `visual-invalid` | A visual doesn't match its schema or refers to an id it doesn't declare. The message says where. |
 | `step-link-unknown` | A `docent:step/` link or a visual's `step` names a step that doesn't exist. |
+| `tour-link-unknown` | A `docent:tour/` link names a tour that isn't among the tours in this folder. A warning: it may live in a folder that isn't open here. |
+| `tour-link-ambiguous` | A `docent:tour/` link fits more than one tour. Write more of the path. |
+| `tour-link-step-unknown` | A `docent:tour/` link names a step the tour it leads to doesn't have. |
+| `next-tour-unknown` | `nextTour` isn't the exact `title` of another tour in this folder. |
 | `content-changed` | The anchored code was edited since the stamp. Check the step is still true. |
 | `code-removed` | The anchored code is gone. `docent stale` shows what replaced it. |
 | `stamp-unreachable` | The stamp commit isn't in the local repo. Tell the person to fetch. |

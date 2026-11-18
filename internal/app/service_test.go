@@ -95,7 +95,7 @@ func newServiceWith(repos workspace.RepoResolver) (*Service, *fakeLauncher) {
 		Source:    source,
 		Repos:     repos,
 		Walker:    walker,
-		Validator: validate.NewValidator(store, walker, nil, nil),
+		Validator: validate.NewValidator(store, walker, func(ctx context.Context) ([]string, error) { return store.Discover(ctx, "/r") }, nil, nil),
 	}
 	launcher := &fakeLauncher{}
 

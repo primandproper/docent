@@ -2,6 +2,7 @@
   import { session } from '../lib/session.svelte';
   import CodeArea from './CodeArea.svelte';
   import Freshness from './Freshness.svelte';
+  import HistoryNav from './HistoryNav.svelte';
   import Narrative from './Narrative.svelte';
   import ReviewButton from './ReviewButton.svelte';
   import StepRail from './StepRail.svelte';
@@ -26,6 +27,7 @@
 
 <div class="walk">
   <header class="bar">
+    <HistoryNav />
     <button class="back" onclick={() => session.close()} title="Back to tours (Esc)">‹ Tours</button>
     <h1>{tour?.title}</h1>
     {#if unreviewed}

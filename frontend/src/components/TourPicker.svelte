@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TourSummary } from '../lib/api';
   import { session } from '../lib/session.svelte';
+  import HistoryNav from './HistoryNav.svelte';
 
   let { filterInput = $bindable() }: { filterInput?: HTMLInputElement } = $props();
 
@@ -61,6 +62,7 @@
 
 <main class="picker">
   <header>
+    <div class="history"><HistoryNav /></div>
     <h1>{session.workspace?.name || 'Docent'}</h1>
     <p class="root selectable">{session.workspace?.root ?? ''}</p>
   </header>
@@ -133,7 +135,9 @@
     </ul>
 
     <footer>
-      <kbd>/</kbd> search <kbd>↑</kbd><kbd>↓</kbd> choose <kbd>↵</kbd> open <kbd>⌘R</kbd> reload <kbd>⌘O</kbd> open a folder
+      <kbd>/</kbd> search <kbd>↑</kbd><kbd>↓</kbd> choose <kbd>↵</kbd> open <kbd>⌘R</kbd> reload <kbd>⌘O</kbd> open a
+      folder
+      <kbd>⌘[</kbd><kbd>⌘]</kbd> back, forward
     </footer>
   {/if}
 </main>
@@ -147,6 +151,10 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  .history {
+    margin: 0 0 10px -6px;
   }
 
   h1 {

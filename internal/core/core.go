@@ -4,6 +4,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -91,7 +92,17 @@ func New(opts *Options) (*Core, error) {
 		Logger:         opts.Logger,
 		TracerProvider: opts.TracerProvider,
 	})
-	c.Validator = validate.NewValidator(c.Store, c.Walker, opts.Logger, opts.TracerProvider)
+	// Links between tours are checked against the tours this folder shows.
+	// With no folder open there are none.
+	discover := func(ctx context.Context) ([]string, error) {
+		if config.Root == "" {
+			return nil, nil
+		}
+
+		return c.Store.Discover(ctx, config.Root, config.TourPaths()...)
+	}
+
+	c.Validator = validate.NewValidator(c.Store, c.Walker, discover, opts.Logger, opts.TracerProvider)
 
 	return c, nil
 }
