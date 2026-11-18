@@ -158,6 +158,29 @@ export enum Code {
      * CodeLinkScheme: a link's URL isn't http or https.
      */
     CodeLinkScheme = "link-scheme",
+
+    /**
+     * CodeTourLinkUnknown: a docent:tour link names a tour that isn't among
+     * the tours found beside this one.
+     */
+    CodeTourLinkUnknown = "tour-link-unknown",
+
+    /**
+     * CodeTourLinkAmbiguous: a docent:tour link matches more than one tour.
+     */
+    CodeTourLinkAmbiguous = "tour-link-ambiguous",
+
+    /**
+     * CodeTourLinkStepUnknown: a docent:tour link names a step the tour it
+     * links to doesn't have.
+     */
+    CodeTourLinkStepUnknown = "tour-link-step-unknown",
+
+    /**
+     * CodeNextTourUnknown: `nextTour` is the title of no tour found beside
+     * this one.
+     */
+    CodeNextTourUnknown = "next-tour-unknown",
 };
 
 /**

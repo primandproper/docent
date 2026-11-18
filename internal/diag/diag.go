@@ -81,6 +81,17 @@ const (
 	CodeLinkVarUnresolved Code = "link-var-unresolved"
 	// CodeLinkScheme: a link's URL isn't http or https.
 	CodeLinkScheme Code = "link-scheme"
+	// CodeTourLinkUnknown: a docent:tour link names a tour that isn't among
+	// the tours found beside this one.
+	CodeTourLinkUnknown Code = "tour-link-unknown"
+	// CodeTourLinkAmbiguous: a docent:tour link matches more than one tour.
+	CodeTourLinkAmbiguous Code = "tour-link-ambiguous"
+	// CodeTourLinkStepUnknown: a docent:tour link names a step the tour it
+	// links to doesn't have.
+	CodeTourLinkStepUnknown Code = "tour-link-step-unknown"
+	// CodeNextTourUnknown: `nextTour` is the title of no tour found beside
+	// this one.
+	CodeNextTourUnknown Code = "next-tour-unknown"
 )
 
 type (

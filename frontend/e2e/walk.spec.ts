@@ -25,7 +25,8 @@ test.describe('tour picker', () => {
 
     const draft = page.getByRole('button', { name: /Reading an item/ });
     await expect(draft).toContainText('Unreviewed draft');
-    await expect(draft).toContainText('2 problems');
+    // One of them is its link to a step the other tour doesn't have.
+    await expect(draft).toContainText('3 problems');
     await expect(draft).toContainText('api, worker, billing');
 
     await expect(page.getByRole('button', { name: /broken\.tour/ })).toBeDisabled();
@@ -141,22 +142,36 @@ test.describe('walking a tour', () => {
     await expect(currentStep(page)).toContainText('The docs folder');
   });
 
-  test('history goes back and forward, across tours and the picker', async ({ page }) => {
+  test('history goes back and forward, across jumps, tours and the picker', async ({ page }) => {
     await openMain(page);
 
+    // Stepping takes the history entry along; a jump adds one.
     await page.keyboard.press('j');
+    await expect(currentStep(page)).toContainText('The write handler');
+    await page.locator('.step').nth(4).click();
     await page.keyboard.press('j');
-    await expect(currentStep(page)).toContainText('The purge worker');
+    const last = await currentStep(page).textContent();
 
     await page.keyboard.press('Meta+[');
     await expect(currentStep(page)).toContainText('The write handler');
-    await page.keyboard.press('Meta+[');
-    await page.keyboard.press('Meta+[');
+    await page.keyboard.press('Meta+ArrowLeft');
     await expect(page.locator('.picker')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeDisabled();
 
     await page.keyboard.press('Meta+]');
-    await page.keyboard.press('Meta+]');
     await expect(currentStep(page)).toContainText('The write handler');
+    await page.keyboard.press('Meta+ArrowRight');
+    await expect(currentStep(page)).toHaveText(last ?? '');
+    await expect(page.getByRole('button', { name: 'Forward', exact: true })).toBeDisabled();
+  });
+
+  test('⌘← in the search box moves the caret, not the history', async ({ page }) => {
+    await openMain(page);
+    await page.keyboard.press('/');
+    await expect(page.getByRole('searchbox')).toBeFocused();
+
+    await page.keyboard.press('Meta+ArrowLeft');
+    await expect(page.locator('.picker')).toBeVisible();
   });
 
   test('the last step offers the next tour, and Escape returns to the picker', async ({ page }) => {
@@ -575,6 +590,23 @@ test.describe('links within the app', () => {
     await expect(page.getByRole('heading', { level: 1, name: MAIN })).toBeVisible();
     // That tour is plain CodeTour and has no step ids, so it opens at the start.
     await expect(currentStep(page)).toContainText('Why this is worth a tour');
+  });
+
+  test('the back button returns from a linked tour to the step the link was on', async ({ page }) => {
+    await openWrapUp(page);
+
+    await page.getByRole('link', { name: 'the write path' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: MAIN })).toBeVisible();
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Reading an item' })).toBeVisible();
+    await expect(page.locator('.narrative')).toContainText('Short tour, short path.');
+
+    await page.getByRole('button', { name: 'Forward', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: MAIN })).toBeVisible();
+    await expect(currentStep(page)).toContainText('The purge worker');
   });
 
   test('a link card can point inside the app too', async ({ page }) => {

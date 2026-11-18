@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/primandproper/docent/internal/anchor"
 	"github.com/primandproper/docent/internal/diag"
@@ -29,27 +30,46 @@ type (
 	Validator interface {
 		// Tour validates one tour file and returns everything wrong with it.
 		Tour(ctx context.Context, path string) ([]diag.Diagnostic, error)
+		// Reset forgets what the validator remembers about the other tours,
+		// so the next check reads them again.
+		Reset()
 	}
 
+	// Discoverer lists the tour files a tour's links may lead to.
+	Discoverer func(ctx context.Context) ([]string, error)
+
 	validator struct {
-		_      struct{}
-		store  tour.Store
-		walker walk.Walker
-		logger logging.Logger
-		tracer tracing.Tracer
+		_        struct{}
+		store    tour.Store
+		walker   walk.Walker
+		logger   logging.Logger
+		tracer   tracing.Tracer
+		discover Discoverer
+		others   []neighbor
+		mu       sync.Mutex
+		indexed  bool
 	}
 )
 
 var _ Validator = (*validator)(nil)
 
-// NewValidator returns a Validator.
-func NewValidator(store tour.Store, walker walk.Walker, logger logging.Logger, tracerProvider tracing.Provider) Validator {
+// NewValidator returns a Validator. discover says which tours exist, for
+// checking links between them; with nil those links are not checked.
+func NewValidator(store tour.Store, walker walk.Walker, discover Discoverer, logger logging.Logger, tracerProvider tracing.Provider) Validator {
 	return &validator{
-		store:  store,
-		walker: walker,
-		logger: logging.NewNamedLogger(logger, o11yName),
-		tracer: tracing.NewNamedTracer(tracerProvider, o11yName),
+		store:    store,
+		walker:   walker,
+		discover: discover,
+		logger:   logging.NewNamedLogger(logger, o11yName),
+		tracer:   tracing.NewNamedTracer(tracerProvider, o11yName),
 	}
+}
+
+func (v *validator) Reset() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	v.others, v.indexed = nil, false
 }
 
 func (v *validator) Tour(ctx context.Context, path string) ([]diag.Diagnostic, error) {
@@ -73,6 +93,8 @@ func (v *validator) Tour(ctx context.Context, path string) ([]diag.Diagnostic, e
 		diags = append(diags, d)
 	}
 
+	var refs []tourRef
+
 	for i := range t.Steps {
 		step, stepErr := v.walker.Step(ctx, t, i)
 		if stepErr != nil {
@@ -91,6 +113,18 @@ func (v *validator) Tour(ctx context.Context, path string) ([]diag.Diagnostic, e
 
 		diags = append(diags, narrativeDiagnostics(t, i, step)...)
 		diags = append(diags, embedDiagnostics(t, i, step)...)
+		refs = append(refs, stepTourRefs(t, i, step.Body)...)
+	}
+
+	if len(refs) > 0 || t.NextTour != "" {
+		others, indexErr := v.neighbors(ctx, t)
+		if indexErr != nil {
+			return nil, observability.PrepareAndLogError(indexErr, logger, span, "listing the other tours")
+		}
+
+		if others != nil {
+			diags = append(diags, tourLinkDiagnostics(t, refs, others)...)
+		}
 	}
 
 	logger.WithValue("diagnostics", len(diags)).Debug("validated tour")

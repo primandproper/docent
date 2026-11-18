@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"context"
 	"testing"
 
 	"github.com/primandproper/docent/internal/diag"
@@ -23,9 +24,19 @@ func newValidator(tourJSON string) Validator {
 		gitsrc.Key("/r/.tours", "", "t/map.mmd"):   []byte("flowchart LR\n  api e1@--> queue\n  queue --> worker\n"),
 		gitsrc.Key("/r/.tours", "", "t/notmap.md"): []byte("sequenceDiagram\n  a->>b: hi\n"),
 	}
-	store := &tour.MemoryStore{Root: "/r", Files: map[string][]byte{tourPath: []byte(tourJSON)}}
+	return newValidatorFor(source, map[string]string{tourPath: tourJSON})
+}
 
-	return NewValidator(store, walk.NewWalker(&walk.Dependencies{Source: source}), nil, nil)
+// newValidatorFor validates among several tours, so links between them can be checked.
+func newValidatorFor(source gitsrc.Memory, tours map[string]string) Validator {
+	store := &tour.MemoryStore{Root: "/r", Files: map[string][]byte{}}
+	for path, content := range tours {
+		store.Files[path] = []byte(content)
+	}
+
+	discover := func(ctx context.Context) ([]string, error) { return store.Discover(ctx, "/r") }
+
+	return NewValidator(store, walk.NewWalker(&walk.Dependencies{Source: source}), discover, nil, nil)
 }
 
 func TestValidator_Map(T *testing.T) {
@@ -279,5 +290,126 @@ func TestPlacement(T *testing.T) {
 
 		_, misplaced = placement(&tour.Tour{Steps: []tour.Step{{Repo: "api"}, {}}}, "api")
 		test.False(t, misplaced)
+	})
+}
+
+func TestValidator_TourLinks(T *testing.T) {
+	T.Parallel()
+
+	const (
+		cronPath = "/r/.tours/ops/cron.tour"
+		cron     = `{"docent": 1, "title": "Cron", "steps": [{ "id": "scheduling", "description": "d" }]}`
+	)
+
+	source := gitsrc.Memory{
+		gitsrc.Key("/r", "", ".tours/keep"):      []byte(""),
+		gitsrc.Key("/r/.tours", "", "t/body.md"): []byte("See [cron](docent:tour/cron.tour#nope).\n"),
+	}
+
+	check := func(t *testing.T, tours map[string]string) []diag.Diagnostic {
+		t.Helper()
+
+		diags, err := newValidatorFor(source, tours).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+
+		return diags
+	}
+
+	T.Run("links to a tour, to one of its steps, and a nextTour that exist are clean", func(t *testing.T) {
+		t.Parallel()
+
+		diags := check(t, map[string]string{cronPath: cron, tourPath: `{"docent": 1, "title": "t", "nextTour": "Cron", "steps": [
+			{ "id": "a", "description": "[a](docent:tour/cron.tour) [b](docent:tour/ops/cron.tour#scheduling) [c](docent:tour/t.tour#a)",
+			  "links": [{ "kind": "doc", "title": "Cron", "url": "docent:tour/cron.tour#scheduling" }] }
+		]}`})
+		test.Len(t, 0, diags, test.Sprintf("%+v", diags))
+	})
+
+	T.Run("a tour that isn't here is a warning, where the link is", func(t *testing.T) {
+		t.Parallel()
+
+		diags := check(t, map[string]string{cronPath: cron, tourPath: `{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "d", "links": [{ "kind": "doc", "title": "Gone", "url": "docent:tour/gone.tour#x" }] }
+		]}`})
+		must.Len(t, 1, diags)
+		test.Eq(t, diag.CodeTourLinkUnknown, diags[0].Code)
+		test.Eq(t, diag.SeverityWarning, diags[0].Severity)
+		test.Eq(t, "/steps/0/links/0/url", diags[0].Pointer)
+		test.Eq(t, "a", diags[0].Step)
+	})
+
+	T.Run("a step the other tour doesn't have is an error, in a body file too", func(t *testing.T) {
+		t.Parallel()
+
+		diags := check(t, map[string]string{cronPath: cron, tourPath: `{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "d", "body": "t/body.md" }
+		]}`})
+		must.Len(t, 1, diags, must.Sprintf("%+v", diags))
+		test.Eq(t, diag.CodeTourLinkStepUnknown, diags[0].Code)
+		test.Eq(t, diag.SeverityError, diags[0].Severity)
+		test.Eq(t, "/steps/0/body", diags[0].Pointer)
+	})
+
+	T.Run("a name that fits two tours is a warning", func(t *testing.T) {
+		t.Parallel()
+
+		diags := check(t, map[string]string{cronPath: cron, "/r/.tours/dev/cron.tour": cron, tourPath: `{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "[a](docent:tour/cron.tour) and [b](docent:tour/ops/cron.tour)" }
+		]}`})
+		must.Len(t, 1, diags, must.Sprintf("%+v", diags))
+		test.Eq(t, diag.CodeTourLinkAmbiguous, diags[0].Code)
+		test.StrContains(t, diags[0].Message, "/r/.tours/dev/cron.tour")
+	})
+
+	T.Run("a nextTour that is no other tour's title is a warning", func(t *testing.T) {
+		t.Parallel()
+
+		for _, next := range []string{"Crons", "t"} {
+			diags := check(t, map[string]string{cronPath: cron, tourPath: `{"title": "t", "nextTour": "` + next + `", "steps": [
+				{ "description": "d" }
+			]}`})
+			must.Len(t, 1, diags, must.Sprint(next))
+			test.Eq(t, diag.CodeNextTourUnknown, diags[0].Code)
+			test.Eq(t, diag.SeverityWarning, diags[0].Severity)
+			test.Eq(t, "/nextTour", diags[0].Pointer)
+		}
+	})
+
+	T.Run("the other tours are read once, until Reset", func(t *testing.T) {
+		t.Parallel()
+
+		store := &tour.MemoryStore{Root: "/r", Files: map[string][]byte{
+			tourPath: []byte(`{"title": "t", "nextTour": "Cron", "steps": [{ "description": "d" }]}`),
+		}}
+		discover := func(ctx context.Context) ([]string, error) { return store.Discover(ctx, "/r") }
+		v := NewValidator(store, walk.NewWalker(&walk.Dependencies{Source: source}), discover, nil, nil)
+
+		diags, err := v.Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		must.Len(t, 1, diags)
+
+		store.Files[cronPath] = []byte(cron)
+
+		diags, err = v.Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		test.Len(t, 1, diags)
+
+		v.Reset()
+
+		diags, err = v.Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		test.Len(t, 0, diags)
+	})
+
+	T.Run("with no way to list the tours, links between them are not checked", func(t *testing.T) {
+		t.Parallel()
+
+		store := &tour.MemoryStore{Root: "/r", Files: map[string][]byte{
+			tourPath: []byte(`{"title": "t", "nextTour": "Cron", "steps": [{ "description": "[a](docent:tour/gone.tour)" }]}`),
+		}}
+
+		diags, err := NewValidator(store, walk.NewWalker(&walk.Dependencies{Source: source}), nil, nil, nil).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		test.Len(t, 0, diags)
 	})
 }

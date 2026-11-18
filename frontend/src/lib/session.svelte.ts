@@ -46,6 +46,10 @@ class Session {
   /** Whether a review is being saved. */
   reviewing = $state(false);
 
+  /** Whether there is somewhere to go back or forward to. */
+  canBack = $state(false);
+  canForward = $state(false);
+
   private readTimer: ReturnType<typeof setTimeout> | undefined;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
   private history = new NavHistory();
@@ -65,7 +69,7 @@ class Session {
     try {
       this.workspace = await api.workspace();
       await this.refreshTours();
-      this.history.visit({ path: '', index: 0 });
+      this.record({ path: '', index: 0 });
       // Live reload: whoever is editing a tour sees it here as they save.
       api.onChanged(() => void this.reload());
       api.onMap((message) => this.heard(message));
@@ -96,7 +100,8 @@ class Session {
     const byNumber = parseStepNumber(request.step, steps.length);
     const index = byID >= 0 ? byID : (byNumber ?? 0);
     if (index > 0) {
-      await this.go(index);
+      // Arriving at the step asked for is one move, not two.
+      await this.go(index, 'move');
     }
   }
 
@@ -123,7 +128,7 @@ class Session {
   }
 
   /** Opens a tour at a step. */
-  async open(path: string, index = 0, record = true): Promise<void> {
+  async open(path: string, index = 0, record: Recording = true): Promise<void> {
     try {
       const view = await api.openTour(path);
       this.cache.clear();
@@ -137,8 +142,11 @@ class Session {
     }
   }
 
-  /** Moves to a step of the open tour. */
-  async go(index: number, record = true): Promise<void> {
+  /**
+   * Moves to a step of the open tour. A jump is recorded in the history; `'move'` is for stepping, which takes the
+   * current entry along instead.
+   */
+  async go(index: number, record: Recording = true): Promise<void> {
     const count = this.stepCount;
     clearTimeout(this.readTimer);
     if (!this.view || count === 0) {
@@ -156,7 +164,7 @@ class Session {
     this.reviewAsking = false;
     this.index = target;
     if (record) {
-      this.history.visit({ path: this.path, index: target });
+      this.record({ path: this.path, index: target }, record === 'move');
     }
 
     try {
@@ -239,11 +247,11 @@ class Session {
   }
 
   next(): Promise<void> {
-    return this.index + 1 < this.stepCount ? this.go(this.index + 1) : Promise.resolve();
+    return this.index + 1 < this.stepCount ? this.go(this.index + 1, 'move') : Promise.resolve();
   }
 
   previous(): Promise<void> {
-    return this.index > 0 ? this.go(this.index - 1) : Promise.resolve();
+    return this.index > 0 ? this.go(this.index - 1, 'move') : Promise.resolve();
   }
 
   /** Returns to the tour picker. */
@@ -255,7 +263,7 @@ class Session {
     this.review = null;
     this.cache.clear();
     if (record) {
-      this.history.visit({ path: '', index: 0 });
+      this.record({ path: '', index: 0 });
     }
     try {
       await this.refreshTours();
@@ -388,7 +396,7 @@ class Session {
     if (link.id) {
       const index = (this.view?.tour?.steps ?? []).findIndex((step) => step.id === link.id);
       if (index > 0) {
-        await this.go(index);
+        await this.go(index, 'move');
       }
     }
   }
@@ -500,7 +508,19 @@ class Session {
     return this.visit(this.history.forward());
   }
 
+  private record(place: Place, moving = false): void {
+    if (moving) {
+      this.history.move(place);
+    } else {
+      this.history.visit(place);
+    }
+    this.canBack = this.history.canBack;
+    this.canForward = this.history.canForward;
+  }
+
   private visit(place: Place | null): Promise<void> {
+    this.canBack = this.history.canBack;
+    this.canForward = this.history.canForward;
     if (!place) {
       return Promise.resolve();
     }
@@ -510,5 +530,8 @@ class Session {
     return place.path === this.path ? this.go(place.index, false) : this.open(place.path, place.index, false);
   }
 }
+
+/** Whether a navigation is recorded in the history: as a new entry, by moving the current one, or not at all. */
+type Recording = boolean | 'move';
 
 export const session = new Session();

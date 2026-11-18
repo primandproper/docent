@@ -58,7 +58,7 @@ The highlighted map node and the highlighted code band always describe the same 
 - **System map (collapsible, docked above the narrative):** one diagram per tour. The current step's nodes and edges are highlighted and visited ones are dimmed. Clicking a node jumps to the first step that focuses it. It can zoom in on what the current step focuses and follow the tour from there, take the centre pane, or be popped out into a window of its own that floats above the main one and still follows, and drives, the tour.
 - **Content-only steps** hide the code pane and give the narrative full width, which works like a slide.
 
-**Keyboard:** `j`/`k` or arrow keys move between steps, `g` goes to a step, `o` opens in editor, `m` toggles the map, `z` zooms it in on the current step, `⌃Z` pops it out into its own window, `/` searches tours, `⌘R` reloads, and `⌘[`/`⌘]` move back and forward through navigation history.
+**Keyboard:** `j`/`k` or arrow keys move between steps, `g` goes to a step, `o` opens in editor, `m` toggles the map, `z` zooms it in on the current step, `⌃Z` pops it out into its own window, `/` searches tours, `⌘R` reloads, and `⌘[`/`⌘]` (or `⌘←`/`⌘→`, and the arrows in the header) move back and forward through navigation history. Stepping through a tour moves the current history entry along instead of adding one, so going back from a tour reached by a link returns to the step the link was on, then to wherever came before, and in the end to the tour picker.
 
 **Live reload.** Docent watches tour files and their referenced Markdown. On change, it re-parses and keeps your position by step `id` (by index if there's no id). This makes the app the preview loop for both agents and people editing by hand.
 
