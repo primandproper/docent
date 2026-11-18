@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docent.dev/schema/tour.v1.json",
+  "docent": 1,
+  "title": "On call for the cache",
+  "description": "What to check when the cache pages you. Lives in the handbook, not in a service repo.",
+  "tags": ["on-call"],
+  "steps": [
+    {
+      "id": "first-look",
+      "title": "First look",
+      "description": "Most cache pages are stale reads. Before anything else, find out whether a purge is stuck."
+    },
+    {
+      "id": "how-purges-work",
+      "title": "How purges work",
+      "description": "A purge is queued by the write path and run by the worker. If you haven't walked it, read [how a write invalidates the cache](docent:tour/cache-invalidation.tour) first, then come back here."
+    },
+    {
+      "id": "escalate",
+      "title": "When to escalate",
+      "description": "If the queue is draining and reads are still stale after ten minutes, page the storage team."
+    }
+  ]
+}

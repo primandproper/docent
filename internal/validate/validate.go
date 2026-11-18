@@ -35,8 +35,10 @@ type (
 		Reset()
 	}
 
-	// Discoverer lists the tour files a tour's links may lead to.
-	Discoverer func(ctx context.Context) ([]string, error)
+	// Discoverer lists the tour files a tour's links may lead to, nearest
+	// first: the tours of its own folder, then those of each other place
+	// that is open. A link goes to the nearest list that has its tour.
+	Discoverer func(ctx context.Context) ([][]string, error)
 
 	validator struct {
 		_        struct{}
@@ -45,7 +47,7 @@ type (
 		logger   logging.Logger
 		tracer   tracing.Tracer
 		discover Discoverer
-		others   []neighbor
+		others   [][]neighbor
 		mu       sync.Mutex
 		indexed  bool
 	}

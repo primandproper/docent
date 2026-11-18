@@ -43,7 +43,7 @@ type (
 		// ReviewProblems holds what stops each tour being reviewed once every
 		// step has been read, by tour path: "" when nothing does.
 		ReviewProblems map[string]string `json:"reviewProblems"`
-		Workspace      app.Workspace     `json:"workspace"`
+		Folders        []app.Folder      `json:"folders"`
 		Tours          []app.TourSummary `json:"tours"`
 	}
 
@@ -72,17 +72,16 @@ func run(ctx context.Context, testdata, output string) error {
 		return fmt.Errorf("building the workspace: %w", err)
 	}
 
-	// The user's own config must not leak into a recorded fixture.
-	services, err := core.New(&core.Options{Root: root, UserConfigPath: filepath.Join(root, "no-user-config.json")})
-	if err != nil {
-		return fmt.Errorf("setting up: %w", err)
+	// A second folder of tours, beside the first, for the app to have more
+	// than one open: a handbook whose tour links into the workspace's.
+	handbook := filepath.Join(filepath.Dir(root), "handbook")
+	if err = os.CopyFS(handbook, os.DirFS(filepath.Join(testdata, "handbook"))); err != nil {
+		return fmt.Errorf("copying the handbook: %w", err)
 	}
-	defer services.Close()
-
-	service := app.NewService(root, services, nil, nil, nil)
 
 	out := fixture{
-		Workspace:      service.Workspace(),
+		Folders:        []app.Folder{},
+		Tours:          []app.TourSummary{},
 		Views:          map[string]*app.TourView{},
 		Steps:          map[string][]*app.StepView{},
 		Picked:         map[string]picked{},
@@ -92,13 +91,60 @@ func run(ctx context.Context, testdata, output string) error {
 		Files:          map[string]map[string]*app.FileView{},
 	}
 
-	if out.Tours, err = service.ListTours(ctx); err != nil {
+	// Each folder is recorded by a service of its own that knows the other
+	// folder's tours, which is how the app checks links between folders.
+	if err = recordFolder(ctx, root, handbook, &out); err != nil {
+		return err
+	}
+
+	if err = recordFolder(ctx, handbook, root, &out); err != nil {
+		return err
+	}
+
+	encoded, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding fixture: %w", err)
+	}
+
+	if err = os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
+		return fmt.Errorf("creating output directory: %w", err)
+	}
+
+	if err = os.WriteFile(output, encoded, 0o600); err != nil {
+		return fmt.Errorf("writing fixture: %w", err)
+	}
+
+	return nil
+}
+
+// recordFolder records everything the service says about one folder's tours,
+// with the tours of the folder beside it there to be linked to.
+func recordFolder(ctx context.Context, root, beside string, out *fixture) error {
+	services, err := core.New(&core.Options{
+		Root: root,
+		// The user's own config must not leak into a recorded fixture.
+		UserConfigPath: filepath.Join(root, "no-user-config.json"),
+		Elsewhere:      func(context.Context) ([]string, error) { return tour.Discover(beside) },
+	})
+	if err != nil {
+		return fmt.Errorf("setting up %s: %w", root, err)
+	}
+	defer services.Close()
+
+	service := app.NewService(root, services, nil, nil, nil)
+
+	out.Folders = append(out.Folders, service.Folders()...)
+
+	tours, err := service.ListTours(ctx)
+	if err != nil {
 		return fmt.Errorf("listing tours: %w", err)
 	}
 
-	for i := range out.Tours {
-		path := out.Tours[i].Path
-		if out.Tours[i].Unreadable {
+	out.Tours = append(out.Tours, tours...)
+
+	for i := range tours {
+		path := tours[i].Path
+		if tours[i].Unreadable {
 			continue
 		}
 
@@ -172,19 +218,6 @@ func run(ctx context.Context, testdata, output string) error {
 				}
 			}
 		}
-	}
-
-	encoded, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encoding fixture: %w", err)
-	}
-
-	if err = os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
-		return fmt.Errorf("creating output directory: %w", err)
-	}
-
-	if err = os.WriteFile(output, encoded, 0o600); err != nil {
-		return fmt.Errorf("writing fixture: %w", err)
 	}
 
 	return nil

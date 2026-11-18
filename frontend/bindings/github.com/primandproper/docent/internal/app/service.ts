@@ -20,6 +20,16 @@ import * as links$0 from "../links/models.js";
 import * as $models from "./models.js";
 
 /**
+ * AddFolder asks the reader for a folder, opens it and saves it in the
+ * library. It returns the folders as they now are, which is unchanged if they
+ * cancelled. It takes no path: the only folders the frontend can add are ones
+ * the reader picked in the system's own dialog.
+ */
+export function AddFolder(): $CancellablePromise<$models.Folder[] | null> {
+    return $Call.ByID(2189287591);
+}
+
+/**
  * Browse lists a directory of the repo a step's code is in, at the ref the
  * step is read at. dir is relative to that repo's root; "" is the root.
  */
@@ -33,14 +43,6 @@ export function Browse(path: string, index: number, extra: number, dir: string):
  */
 export function BrowseFile(path: string, index: number, extra: number, file: string): $CancellablePromise<$models.FileView | null> {
     return $Call.ByID(1718863404, path, index, extra, file);
-}
-
-/**
- * ChooseFolder asks the reader for a folder and opens it. It returns the
- * workspace as it now is, which is unchanged if they cancelled.
- */
-export function ChooseFolder(): $CancellablePromise<$models.Workspace> {
-    return $Call.ByID(1757494681);
 }
 
 /**
@@ -77,6 +79,22 @@ export function Fetch(path: string, repo: string): $CancellablePromise<void> {
 }
 
 /**
+ * Folders lists the folders that are open, in the order the picker shows them.
+ */
+export function Folders(): $CancellablePromise<$models.Folder[] | null> {
+    return $Call.ByID(681628789);
+}
+
+/**
+ * KeepFolder saves a folder that is already open, one that came from the
+ * command line or a link, in the library. Only an open folder can be kept, so
+ * this adds nothing the reader isn't already looking at.
+ */
+export function KeepFolder(root: string): $CancellablePromise<$models.Folder[] | null> {
+    return $Call.ByID(956028241, root);
+}
+
+/**
  * Launch hands over the tour the app was asked to open from outside, once.
  */
 export function Launch(): $CancellablePromise<$models.LaunchRequest> {
@@ -84,7 +102,8 @@ export function Launch(): $CancellablePromise<$models.LaunchRequest> {
 }
 
 /**
- * ListTours discovers the workspace's tours and summarizes each for the picker.
+ * ListTours discovers every open folder's tours and summarizes each for the
+ * picker, folder by folder.
  */
 export function ListTours(): $CancellablePromise<$models.TourSummary[] | null> {
     return $Call.ByID(1990949275);
@@ -114,6 +133,14 @@ export function OpenInEditor(path: string, index: number, extra: number, editorI
  */
 export function OpenTour(path: string): $CancellablePromise<$models.TourView | null> {
     return $Call.ByID(1456785418, path);
+}
+
+/**
+ * RemoveFolder closes a folder and, if it was saved, takes it out of the
+ * library. Nothing on disk but the library file is touched.
+ */
+export function RemoveFolder(root: string): $CancellablePromise<$models.Folder[] | null> {
+    return $Call.ByID(4082998092, root);
 }
 
 /**
@@ -159,11 +186,4 @@ export function Step(path: string, index: number): $CancellablePromise<$models.S
  */
 export function ToggleMapWindow(): $CancellablePromise<void> {
     return $Call.ByID(1347010430);
-}
-
-/**
- * Workspace reports the folder the app was opened on.
- */
-export function Workspace(): $CancellablePromise<$models.Workspace> {
-    return $Call.ByID(2776782621);
 }

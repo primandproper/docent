@@ -7,15 +7,16 @@ import type {
   Entry,
   MapMessage,
   FileView,
+  Folder,
   ReviewState,
   StepView,
   TourSummary,
   TourView,
-  Workspace,
 } from './api';
 
 interface Fixture {
-  workspace: Workspace;
+  /** Every recorded folder. Only the first is open to begin with. */
+  folders: Folder[];
   tours: TourSummary[];
   views: Record<string, TourView>;
   steps: Record<string, StepView[]>;
@@ -41,6 +42,8 @@ declare global {
     docentFixture?: Fixture;
     docentChanged: () => void;
     docentLaunch?: { tour: string; step: string };
+    /** The roots of the folders to start with, in place of the first recorded one. */
+    docentFolders?: string[];
     /** The map window, once it has been popped out. */
     docentMapWindow?: Window | null;
     /** Reviews the app signed, as "name: path". */
@@ -72,6 +75,25 @@ async function current(path: string): Promise<{ view: TourView; steps: StepView[
     return f.picked[`${path}|${pick}`];
   }
   return f.views[path] ? { view: f.views[path], steps: f.steps[path] ?? [] } : undefined;
+}
+
+/** The roots of the folders that are open. It starts as `docent <folder>` would: one folder, not saved. */
+let openRoots: string[] | undefined;
+/** The roots of the folders the reader added or kept. */
+const saved = new Set<string>();
+
+async function roots(): Promise<string[]> {
+  openRoots ??= window.docentFolders ?? (await fixture()).folders.slice(0, 1).map((folder) => folder.root);
+  return openRoots;
+}
+
+async function openFolders(): Promise<Folder[]> {
+  const open = await roots();
+  const recorded = (await fixture()).folders;
+  return open.flatMap((root) => {
+    const folder = recorded.find((f) => f.root === root);
+    return folder ? [{ ...folder, saved: saved.has(root) }] : [];
+  });
 }
 
 /** Which steps of each tour have been read, as Go would keep it. */
@@ -124,12 +146,17 @@ export const backend: Api = {
     mapChannel.addEventListener('message', listener);
     return () => mapChannel.removeEventListener('message', listener);
   },
-  workspace: async () => (await fixture()).workspace,
-  listTours: async () => (await fixture()).tours,
+  folders: openFolders,
+  listTours: async () => {
+    const open = await roots();
+    const tours = (await fixture()).tours;
+    return open.flatMap((root) => tours.filter((tour) => tour.folder === root));
+  },
   openTour: async (path) => {
     const found = await current(path);
-    if (!found) {
-      throw new Error(`${path}: not a tour in this workspace`);
+    const summary = (await fixture()).tours.find((tour) => tour.path === path);
+    if (!found || !summary || !(await roots()).includes(summary.folder)) {
+      throw new Error(`${path}: not a tour in a folder that is open`);
     }
     return { ...found.view, review: await reviewState(path, found.view) };
   },
@@ -228,9 +255,32 @@ export const backend: Api = {
   },
   // Tests set window.docentLaunch before the app starts to stand in for `docent open`.
   launch: async () => window.docentLaunch ?? { tour: '', step: '' },
-  chooseFolder: async () => {
-    window.gitActions.push('choose-folder');
-    return (await fixture()).workspace;
+  // The folder "picked in the dialog" is the next recorded one that isn't open.
+  addFolder: async () => {
+    window.gitActions.push('add-folder');
+    const open = await roots();
+    const next = (await fixture()).folders.find((folder) => !open.includes(folder.root));
+    if (next) {
+      open.push(next.root);
+      saved.add(next.root);
+    }
+    return openFolders();
+  },
+  keepFolder: async (root) => {
+    if (!(await roots()).includes(root)) {
+      throw new Error(`${root}: not a folder that is open`);
+    }
+    saved.add(root);
+    return openFolders();
+  },
+  removeFolder: async (root) => {
+    const open = await roots();
+    if (!open.includes(root)) {
+      throw new Error(`${root}: not a folder that is open`);
+    }
+    open.splice(open.indexOf(root), 1);
+    saved.delete(root);
+    return openFolders();
   },
   onOpen: () => () => undefined,
   onChanged: (callback) => {

@@ -813,17 +813,119 @@ test.describe('opening from outside', () => {
   });
 
   test('with no folder, the app asks for one', async ({ page }) => {
-    await page.route('**/fixture.json', async (route) => {
-      const response = await route.fetch();
-      const fixture = (await response.json()) as { workspace: { root: string; name: string }; tours: unknown[] };
-      // What the service reports when launched from Finder.
-      await route.fulfill({ response, json: { ...fixture, workspace: { root: '', name: '' }, tours: [] } });
+    // What the service reports when launched from Finder with nothing saved.
+    await page.addInitScript(() => {
+      window.docentFolders = [];
     });
     await page.goto('/');
 
-    await expect(page.getByRole('heading', { level: 2, name: 'Open a folder to begin' })).toBeVisible();
-    await page.getByRole('button', { name: 'Open a folder…' }).click();
-    expect(await page.evaluate(() => window.gitActions)).toEqual(['choose-folder']);
+    await expect(page.getByRole('heading', { level: 2, name: 'Add a folder to begin' })).toBeVisible();
+    await page.getByRole('button', { name: 'Add a folder…' }).click();
+    expect(await page.evaluate(() => window.gitActions)).toEqual(['add-folder']);
+    await expect(page.locator('.tour')).toHaveCount(6);
+  });
+});
+
+test.describe('several folders', () => {
+  const HANDBOOK = 'On call for the cache';
+
+  async function addHandbook(page: Page): Promise<void> {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Add a folder…' }).click();
+    await expect(page.getByRole('region', { name: 'handbook' })).toBeVisible();
+  }
+
+  test('a folder from the command line is open for now, until it is kept', async ({ page }) => {
+    await page.goto('/');
+
+    const workspace = page.getByRole('region', { name: 'workspace' });
+    await expect(workspace).toContainText('Open for now');
+    await expect(workspace.locator('.tour')).toHaveCount(6);
+
+    await page.getByRole('button', { name: 'Keep workspace' }).click();
+    await expect(workspace).not.toContainText('Open for now');
+    await expect(page.getByRole('button', { name: 'Keep workspace' })).toHaveCount(0);
+  });
+
+  test('an added folder is listed under its own name, after the first', async ({ page }) => {
+    await addHandbook(page);
+
+    const folders = page.locator('section.folder');
+    await expect(folders).toHaveCount(2);
+    await expect(folders.nth(0).getByRole('heading', { level: 2 })).toHaveText('workspace');
+    await expect(folders.nth(1).getByRole('heading', { level: 2 })).toHaveText('handbook');
+    await expect(folders.nth(1).locator('.tour')).toHaveCount(1);
+    await expect(folders.nth(1)).toContainText(HANDBOOK);
+    // Its link into the other folder's tour is found, so there is nothing to report.
+    await expect(folders.nth(1)).toContainText('All anchors resolve');
+    await expect(folders.nth(1)).not.toContainText('Open for now');
+  });
+
+  test('search and the arrow keys run across folders', async ({ page }) => {
+    await addHandbook(page);
+
+    await page.keyboard.press('/');
+    await page.keyboard.type('on-call');
+    await expect(page.locator('section.folder')).toHaveCount(1);
+    await expect(page.locator('.tour')).toHaveCount(1);
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { level: 1, name: HANDBOOK })).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('/');
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press('ArrowDown');
+    }
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { level: 1, name: HANDBOOK })).toBeVisible();
+  });
+
+  test('a link reaches a tour in another folder, and back returns to the step it was on', async ({ page }) => {
+    await addHandbook(page);
+    await page.getByRole('button', { name: new RegExp(HANDBOOK) }).click();
+    await page.keyboard.press('j');
+    await expect(currentStep(page)).toContainText('How purges work');
+
+    await page.getByRole('link', { name: 'how a write invalidates the cache' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: MAIN })).toBeVisible();
+    await page.keyboard.press('j');
+
+    await page.keyboard.press('Meta+ArrowLeft');
+    await expect(page.getByRole('heading', { level: 1, name: HANDBOOK })).toBeVisible();
+    await expect(currentStep(page)).toContainText('How purges work');
+
+    // Stepping to that step added nothing to the history, so the next back is the picker.
+    await page.keyboard.press('Meta+ArrowLeft');
+    await expect(page.locator('.picker')).toBeVisible();
+  });
+
+  test('without the other folder, the link says the tour is not here', async ({ page }) => {
+    // The first recorded folder is the one that starts open: make that the handbook.
+    await page.route('**/fixture.json', async (route) => {
+      const response = await route.fetch();
+      const fixture = (await response.json()) as { folders: { root: string; name: string }[] };
+      const handbook = fixture.folders.filter((folder) => folder.name === 'handbook');
+      await route.fulfill({ response, json: { ...fixture, folders: handbook } });
+    });
+    await page.goto('/');
+    await expect(page.locator('section.folder')).toHaveCount(1);
+
+    await page.getByRole('button', { name: new RegExp(HANDBOOK) }).click();
+    await page.keyboard.press('j');
+    await page.getByRole('link', { name: 'how a write invalidates the cache' }).click();
+    await expect(page.getByRole('alert')).toContainText('There is no tour "cache-invalidation.tour"');
+    await expect(page.getByRole('heading', { level: 1, name: HANDBOOK })).toBeVisible();
+  });
+
+  test('removing a folder takes its tours away, and closes one that was open', async ({ page }) => {
+    await addHandbook(page);
+
+    await page.getByRole('button', { name: 'Remove workspace' }).click();
+    await expect(page.locator('section.folder')).toHaveCount(1);
+    await expect(page.locator('.tour')).toHaveCount(1);
+
+    await page.getByRole('button', { name: 'Remove handbook' }).click();
+    await expect(page.getByRole('heading', { level: 2, name: 'Add a folder to begin' })).toBeVisible();
   });
 });
 

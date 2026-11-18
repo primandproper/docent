@@ -230,6 +230,11 @@ managed), link to that tour instead of retelling it: `[how cron jobs are schedul
 The reader goes back with ⌘[ and lands on the step they left. `docent validate` checks that the tour and the step
 exist.
 
+A link can lead to a tour in another folder (a service's tour linking to one in the org-wide tours repo): the app
+shows several folders at once and follows it. When two tours have the same file name, the one in the linking tour's
+own folder is meant. `docent validate` only sees the folder it is run on, so it reports such a link as the warning
+`tour-link-unknown`; that is expected.
+
 Cards can also be written inside a body, where they appear in the flow of the text:
 
 ````
@@ -286,7 +291,7 @@ a step anchors into. For each listed tour:
 | `map-focus-unknown` | A `mapFocus` id isn't a node, or an edge named with `id@`, in the map. |
 | `visual-invalid` | A visual doesn't match its schema or refers to an id it doesn't declare. The message says where. |
 | `step-link-unknown` | A `docent:step/` link or a visual's `step` names a step that doesn't exist. |
-| `tour-link-unknown` | A `docent:tour/` link names a tour that isn't among the tours in this folder. A warning: it may live in a folder that isn't open here. |
+| `tour-link-unknown` | A `docent:tour/` link names a tour that isn't among the tours in this folder. A warning: it may live in another folder, which the app can have open beside this one and `docent validate` never sees. |
 | `tour-link-ambiguous` | A `docent:tour/` link fits more than one tour. Write more of the path. |
 | `tour-link-step-unknown` | A `docent:tour/` link names a step the tour it leads to doesn't have. |
 | `next-tour-unknown` | `nextTour` isn't the exact `title` of another tour in this folder. |

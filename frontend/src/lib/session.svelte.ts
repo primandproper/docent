@@ -1,6 +1,7 @@
 import { api, errorMessage } from './api';
 import type {
   FileView,
+  Folder,
   MapMessage,
   MapState,
   ReviewState,
@@ -8,8 +9,8 @@ import type {
   TourSummary,
   TourView,
   VarView,
-  Workspace,
 } from './api';
+import { namedBy, nearest } from './folders';
 import { NavHistory } from './history';
 import { parseInternal } from './internal';
 import type { Place } from './history';
@@ -27,7 +28,8 @@ export const READ_AFTER_MS = 1500;
  * talks to Go.
  */
 class Session {
-  workspace = $state<Workspace | null>(null);
+  /** The folders of tours that are open. */
+  folders = $state<Folder[]>([]);
   tours = $state<TourSummary[]>([]);
   loading = $state(true);
   /** A failure worth interrupting the reader for. */
@@ -67,7 +69,6 @@ class Session {
 
   async init(): Promise<void> {
     try {
-      this.workspace = await api.workspace();
       await this.refreshTours();
       this.record({ path: '', index: 0 });
       // Live reload: whoever is editing a tour sees it here as they save.
@@ -90,8 +91,7 @@ class Session {
     if (!request.tour) {
       return;
     }
-    // A link may have moved the app to another folder.
-    this.workspace = await api.workspace();
+    // A link may have opened another folder.
     await this.refreshTours();
     await this.open(request.tour);
 
@@ -105,26 +105,55 @@ class Session {
     }
   }
 
-  /** Asks for a folder and opens it. */
-  async chooseFolder(): Promise<void> {
+  /** Asks for a folder, opens it beside the others and saves it. */
+  async addFolder(): Promise<void> {
     try {
-      const workspace = await api.chooseFolder();
-      if (workspace.root !== this.workspace?.root) {
-        this.workspace = workspace;
-        clearTimeout(this.readTimer);
-        this.view = null;
-        this.step = null;
-        this.review = null;
-        this.cache.clear();
-      }
-      await this.refreshTours();
+      this.folders = await api.addFolder();
+      this.tours = await api.listTours();
     } catch (err) {
       this.error = errorMessage(err);
     }
   }
 
+  /** Saves a folder that is only open for now. */
+  async keepFolder(root: string): Promise<void> {
+    try {
+      this.folders = await api.keepFolder(root);
+    } catch (err) {
+      this.error = errorMessage(err);
+    }
+  }
+
+  /** Closes a folder and forgets it. A tour of it that is open is closed too. */
+  async removeFolder(root: string): Promise<void> {
+    try {
+      const walking = this.tours.find((tour) => tour.path === this.path)?.folder === root;
+      this.folders = await api.removeFolder(root);
+      if (walking) {
+        await this.close();
+      } else {
+        this.tours = await api.listTours();
+      }
+    } catch (err) {
+      this.error = errorMessage(err);
+    }
+  }
+
+  /** The name of the folder the open tour is in. */
+  get folderName(): string {
+    const root = this.tours.find((tour) => tour.path === this.path)?.folder;
+    return this.folders.find((folder) => folder.root === root)?.name ?? '';
+  }
+
+  /** The tour the open tour's `nextTour` names, if it is here. */
+  get nextTour(): TourSummary | undefined {
+    const title = this.view?.tour?.nextTour;
+    return title ? nearest(this.tours, this.path, (tour) => tour.title === title) : undefined;
+  }
+
   async refreshTours(): Promise<void> {
     this.tours = await api.listTours();
+    this.folders = await api.folders();
   }
 
   /** Opens a tour at a step. */
@@ -386,10 +415,11 @@ class Session {
       return;
     }
 
-    // A tour is named by the end of its path, so links survive wherever the tours folder lives.
-    const target = this.tours.find((t) => t.path === link.path || t.path.endsWith(`/${link.path}`));
-    if (!target || target.unreadable) {
-      this.error = `There is no tour "${link.path}" in this workspace.`;
+    // A tour is named by the end of its path, so links survive wherever the tours folder lives. One in this
+    // tour's own folder is meant before a namesake in another.
+    const target = nearest(this.tours, this.path, (tour) => namedBy(tour, link.path));
+    if (!target) {
+      this.error = `There is no tour "${link.path}" in the folders that are open.`;
       return;
     }
     await this.open(target.path);

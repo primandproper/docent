@@ -239,7 +239,7 @@
   <div class="crumbs">
     {#if session.browsing}
       <span class="trail">
-        <span class="crumb root">{shown?.repo || session.workspace?.name}</span>
+        <span class="crumb root">{shown?.repo || session.folderName}</span>
         {#each session.browsing.path.split('/').filter(Boolean) as part, i (i)}
           <span class="sep">›</span> <span class="crumb">{part}</span>
         {/each}
@@ -248,7 +248,7 @@
       <button class="open" onclick={() => session.browse('')}>Back to the step</button>
     {:else}
       <span class="trail">
-        <span class="crumb root">{shown?.repo || session.workspace?.name}</span>
+        <span class="crumb root">{shown?.repo || session.folderName}</span>
         {#each (shown?.path ?? '').split('/').filter(Boolean) as part, i (i)}
           <span class="sep">›</span> <span class="crumb">{part}</span>
         {/each}
