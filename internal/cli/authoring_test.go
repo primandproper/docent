@@ -276,6 +276,8 @@ func TestDoctor(T *testing.T) {
 			"version          dev",
 			"workspace file   " + filepath.Join(top, "docent.json"),
 			"config.json (not present)",
+			"library.json",
+			"folders          (none)",
 			tourPath,
 			"api          " + filepath.Join(top, "api") + " (by convention), reading the working tree",
 			"worker       " + filepath.Join(top, "elsewhere", "worker-svc") + " (by workspace-mapping)",

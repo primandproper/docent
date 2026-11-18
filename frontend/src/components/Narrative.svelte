@@ -14,9 +14,7 @@
   const resolved = $derived(session.step?.index === session.index ? session.step : null);
   const location = $derived(resolved?.location ?? null);
   const isLast = $derived(session.index === session.stepCount - 1);
-  const nextTour = $derived(
-    tour?.nextTour ? session.tours.find((t) => t.title === tour.nextTour && !t.unreadable) : undefined,
-  );
+  const nextTour = $derived(session.nextTour);
 
   let body: HTMLDivElement | undefined = $state();
 

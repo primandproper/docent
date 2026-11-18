@@ -72,9 +72,10 @@ func refsIn(text, pointer, step string) []tourRef {
 	return out
 }
 
-// neighbors indexes the tours a link from t may lead to, t among them. It is
-// nil when there is no way to list them. The index is kept until Reset.
-func (v *validator) neighbors(ctx context.Context, t *tour.Tour) ([]neighbor, error) {
+// neighbors indexes the tours a link from t may lead to, nearest first, with
+// t itself among the nearest. It is nil when there is no way to list them.
+// The index is kept until Reset.
+func (v *validator) neighbors(ctx context.Context, t *tour.Tour) ([][]neighbor, error) {
 	if v.discover == nil {
 		return nil, nil
 	}
@@ -83,20 +84,26 @@ func (v *validator) neighbors(ctx context.Context, t *tour.Tour) ([]neighbor, er
 	defer v.mu.Unlock()
 
 	if !v.indexed {
-		paths, err := v.discover(ctx)
+		tiers, err := v.discover(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		others := make([]neighbor, 0, len(paths))
+		others := make([][]neighbor, 0, len(tiers))
 
-		for _, path := range paths {
-			other, _, loadErr := v.store.Load(ctx, path)
-			if loadErr != nil {
-				return nil, fmt.Errorf("loading %s: %w", path, loadErr)
+		for _, paths := range tiers {
+			tier := make([]neighbor, 0, len(paths))
+
+			for _, path := range paths {
+				other, _, loadErr := v.store.Load(ctx, path)
+				if loadErr != nil {
+					return nil, fmt.Errorf("loading %s: %w", path, loadErr)
+				}
+
+				tier = append(tier, describe(path, other))
 			}
 
-			others = append(others, describe(path, other))
+			others = append(others, tier)
 		}
 
 		v.others, v.indexed = others, true
@@ -104,12 +111,24 @@ func (v *validator) neighbors(ctx context.Context, t *tour.Tour) ([]neighbor, er
 
 	// The tour being checked is described as it is now, and is always there
 	// to link to even when it was named outright and not discovered.
-	out := make([]neighbor, 0, len(v.others)+1)
-	out = append(out, describe(t.Path, t))
+	out := [][]neighbor{{describe(t.Path, t)}}
 
-	for i := range v.others {
-		if v.others[i].path != t.Path {
-			out = append(out, v.others[i])
+	for i, tier := range v.others {
+		for j := range tier {
+			if tier[j].path == t.Path {
+				continue
+			}
+
+			if i == 0 {
+				out[0] = append(out[0], tier[j])
+				continue
+			}
+
+			for len(out) <= i {
+				out = append(out, nil)
+			}
+
+			out[i] = append(out[i], tier[j])
 		}
 	}
 
@@ -142,17 +161,25 @@ func named(tourPath, link string) bool {
 }
 
 // tourLinkDiagnostics checks a tour's links into other tours, and its `nextTour`.
-func tourLinkDiagnostics(t *tour.Tour, refs []tourRef, others []neighbor) []diag.Diagnostic {
+func tourLinkDiagnostics(t *tour.Tour, refs []tourRef, tiers [][]neighbor) []diag.Diagnostic {
 	var out []diag.Diagnostic
 
 	for i := range refs {
 		ref := &refs[i]
 
+		// The nearest tour of that name is the one meant, so a tour in the
+		// same folder is never confused with a namesake somewhere else.
 		var matches []*neighbor
 
-		for j := range others {
-			if named(others[j].path, ref.path) {
-				matches = append(matches, &others[j])
+		for _, tier := range tiers {
+			for j := range tier {
+				if named(tier[j].path, ref.path) {
+					matches = append(matches, &tier[j])
+				}
+			}
+
+			if len(matches) > 0 {
+				break
 			}
 		}
 
@@ -189,27 +216,29 @@ func tourLinkDiagnostics(t *tour.Tour, refs []tourRef, others []neighbor) []diag
 		out = append(out, d)
 	}
 
-	if t.NextTour != "" {
-		found := false
-
-		for i := range others {
-			if others[i].readable && others[i].title == t.NextTour && others[i].path != t.Path {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			out = append(out, diag.Diagnostic{
-				File:     t.Path,
-				Pointer:  diag.Pointer("nextTour"),
-				Severity: diag.SeverityWarning,
-				Code:     diag.CodeNextTourUnknown,
-				Message:  fmt.Sprintf("nextTour names %q, which is the title of no other tour here", t.NextTour),
-				Hint:     "`nextTour` is the other tour's `title`, exactly.",
-			})
-		}
+	if t.NextTour != "" && !titled(tiers, t) {
+		out = append(out, diag.Diagnostic{
+			File:     t.Path,
+			Pointer:  diag.Pointer("nextTour"),
+			Severity: diag.SeverityWarning,
+			Code:     diag.CodeNextTourUnknown,
+			Message:  fmt.Sprintf("nextTour names %q, which is the title of no other tour here", t.NextTour),
+			Hint:     "`nextTour` is the other tour's `title`, exactly.",
+		})
 	}
 
 	return out
+}
+
+// titled reports whether some other tour has the title t's `nextTour` names.
+func titled(tiers [][]neighbor, t *tour.Tour) bool {
+	for _, tier := range tiers {
+		for i := range tier {
+			if tier[i].readable && tier[i].title == t.NextTour && tier[i].path != t.Path {
+				return true
+			}
+		}
+	}
+
+	return false
 }

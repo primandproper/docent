@@ -34,7 +34,10 @@ func newValidatorFor(source gitsrc.Memory, tours map[string]string) Validator {
 		store.Files[path] = []byte(content)
 	}
 
-	discover := func(ctx context.Context) ([]string, error) { return store.Discover(ctx, "/r") }
+	discover := func(ctx context.Context) ([][]string, error) {
+		paths, err := store.Discover(ctx, "/r")
+		return [][]string{paths}, err
+	}
 
 	return NewValidator(store, walk.NewWalker(&walk.Dependencies{Source: source}), discover, nil, nil)
 }
@@ -375,13 +378,40 @@ func TestValidator_TourLinks(T *testing.T) {
 		}
 	})
 
+	T.Run("a tour of the same folder is meant before a namesake elsewhere", func(t *testing.T) {
+		t.Parallel()
+
+		const elsewhere = "/other/.tours/cron.tour"
+
+		store := &tour.MemoryStore{Root: "/r", Files: map[string][]byte{
+			cronPath:                  []byte(cron),
+			elsewhere:                 []byte(`{"docent": 1, "title": "Other cron", "steps": [{ "id": "far", "description": "d" }]}`),
+			"/other/.tours/only.tour": []byte(`{"docent": 1, "title": "Only", "steps": [{ "id": "there", "description": "d" }]}`),
+			tourPath: []byte(`{"docent": 1, "title": "t", "nextTour": "Only", "steps": [
+				{ "id": "a", "description": "[a](docent:tour/cron.tour#scheduling) [b](docent:tour/only.tour#there) [c](docent:tour/cron.tour#far)" }
+			]}`),
+		}}
+		discover := func(context.Context) ([][]string, error) {
+			return [][]string{{cronPath, tourPath}, {elsewhere, "/other/.tours/only.tour"}}, nil
+		}
+
+		diags, err := NewValidator(store, walk.NewWalker(&walk.Dependencies{Source: source}), discover, nil, nil).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		must.Len(t, 1, diags, must.Sprintf("%+v", diags))
+		test.Eq(t, diag.CodeTourLinkStepUnknown, diags[0].Code)
+		test.StrContains(t, diags[0].Message, `"far"`)
+	})
+
 	T.Run("the other tours are read once, until Reset", func(t *testing.T) {
 		t.Parallel()
 
 		store := &tour.MemoryStore{Root: "/r", Files: map[string][]byte{
 			tourPath: []byte(`{"title": "t", "nextTour": "Cron", "steps": [{ "description": "d" }]}`),
 		}}
-		discover := func(ctx context.Context) ([]string, error) { return store.Discover(ctx, "/r") }
+		discover := func(ctx context.Context) ([][]string, error) {
+			paths, err := store.Discover(ctx, "/r")
+			return [][]string{paths}, err
+		}
 		v := NewValidator(store, walk.NewWalker(&walk.Dependencies{Source: source}), discover, nil, nil)
 
 		diags, err := v.Tour(t.Context(), tourPath)

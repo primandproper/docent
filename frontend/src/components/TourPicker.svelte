@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { TourSummary } from '../lib/api';
+  import { groupByFolder } from '../lib/folders';
   import { session } from '../lib/session.svelte';
   import HistoryNav from './HistoryNav.svelte';
 
@@ -17,6 +18,11 @@
       [t.title, t.description, t.displayPath, ...(t.tags ?? [])].some((field) => field.toLowerCase().includes(q)),
     );
   });
+
+  // Tours are shown under their folders. `matches` is in folder order too, which is what ↑ and ↓ walk.
+  const groups = $derived(groupByFolder(session.folders, matches, query.trim() !== ''));
+  const position = $derived(new Map(groups.flatMap((group) => group.tours).map((tour, i) => [tour.path, i])));
+  const shown = $derived(groups.flatMap((group) => group.tours));
 
   $effect(() => {
     if (selected >= matches.length) {
@@ -49,7 +55,7 @@
     } else if (event.key === 'ArrowUp') {
       selected = Math.max(selected - 1, 0);
     } else if (event.key === 'Enter') {
-      open(matches[selected]);
+      open(shown[selected]);
     } else if (event.key === 'Escape') {
       query = '';
       filterInput?.blur();
@@ -63,79 +69,123 @@
 <main class="picker">
   <header>
     <div class="history"><HistoryNav /></div>
-    <h1>{session.workspace?.name || 'Docent'}</h1>
-    <p class="root selectable">{session.workspace?.root ?? ''}</p>
+    <div class="heading">
+      <h1>Docent</h1>
+      {#if session.folders.length > 0}
+        <span class="spacer"></span>
+        <button class="add" onclick={() => session.addFolder()} title="Show another folder of tours beside these (⌘O)">
+          Add a folder…
+        </button>
+      {/if}
+    </div>
   </header>
 
-  {#if !session.workspace?.root}
+  {#if session.folders.length === 0}
     <div class="empty">
-      <h2>Open a folder to begin</h2>
-      <p>Pick a folder that holds tours, or the folder your repos are cloned into.</p>
-      <p><button class="choose" onclick={() => session.chooseFolder()}>Open a folder…</button> <kbd>⌘O</kbd></p>
+      <h2>Add a folder to begin</h2>
+      <p>Pick a folder that holds tours, or the folder your repos are cloned into. You can add more than one.</p>
+      <p><button class="choose" onclick={() => session.addFolder()}>Add a folder…</button> <kbd>⌘O</kbd></p>
       <p>From a terminal, <code>docent .</code> opens the folder you are in.</p>
     </div>
-  {:else if session.tours.length === 0}
-    <div class="empty">
-      <h2>No tours here yet</h2>
-      <p>
-        Docent looks for <code>.tour</code> files in <code>.tours/</code>, <code>.vscode/tours/</code> and
-        <code>.github/tours/</code> under this folder.
-      </p>
-      <p>Press <kbd>⌘R</kbd> to look again, or <kbd>⌘O</kbd> to open another folder.</p>
-    </div>
   {:else}
-    <input
-      bind:this={filterInput}
-      bind:value={query}
-      {onkeydown}
-      class="filter"
-      type="search"
-      placeholder="Search tours"
-      aria-label="Search tours"
-      autocomplete="off"
-      spellcheck="false"
-    />
+    {#if session.tours.length > 0}
+      <input
+        bind:this={filterInput}
+        bind:value={query}
+        {onkeydown}
+        class="filter"
+        type="search"
+        placeholder="Search tours"
+        aria-label="Search tours"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    {/if}
 
-    <ul class="tours">
-      {#each matches as tour, i (tour.path)}
-        {@const h = health(tour)}
-        <li>
-          <button
-            class="tour"
-            class:selected={i === selected}
-            disabled={tour.unreadable}
-            onclick={() => open(tour)}
-            onmousemove={() => (selected = i)}
-          >
-            <span class="line">
-              <span class="title">{tour.title}</span>
-              {#if tour.unreviewed}
-                <span class="badge amber">Unreviewed draft</span>
-              {/if}
-              <span class="spacer"></span>
-              <span class="health {h.tone}">{h.text}</span>
-            </span>
-            {#if tour.description}
-              <span class="description">{tour.description}</span>
+    <div class="folders">
+      {#each groups as group (group.folder.root)}
+        {@const folder = group.folder}
+        <section class="folder" aria-label={folder.name}>
+          <div class="folder-head">
+            <h2>{folder.name}</h2>
+            <span class="root selectable" title={folder.root}><bdi>{folder.root}</bdi></span>
+            <span class="spacer"></span>
+            {#if !folder.saved}
+              <span class="unsaved" title="This folder was opened from outside the app, and is here until you quit.">
+                Open for now
+              </span>
+              <button
+                class="folder-action"
+                onclick={() => session.keepFolder(folder.root)}
+                title="Show this folder every time Docent opens"
+                aria-label={`Keep ${folder.name}`}
+              >
+                Keep
+              </button>
             {/if}
-            <span class="meta">
-              {tour.steps}
-              {tour.steps === 1 ? 'step' : 'steps'}
-              {#if (tour.repos ?? []).length > 0}· {(tour.repos ?? []).join(', ')}{/if}
-              · {tour.displayPath}
-              {#each tour.tags ?? [] as tag (tag)}
-                <span class="tag">{tag}</span>
+            <button
+              class="folder-action"
+              onclick={() => session.removeFolder(folder.root)}
+              title="Stop showing this folder. Nothing on disk is deleted."
+              aria-label={`Remove ${folder.name}`}
+            >
+              Remove
+            </button>
+          </div>
+
+          {#if folder.problem}
+            <p class="folder-note red">{folder.problem}</p>
+          {:else if group.tours.length === 0}
+            <p class="folder-note">
+              No tours here yet. Docent looks for <code>.tour</code> files in <code>.tours/</code>,
+              <code>.vscode/tours/</code> and <code>.github/tours/</code> under this folder. Press <kbd>⌘R</kbd> to look again.
+            </p>
+          {:else}
+            <ul class="tours">
+              {#each group.tours as tour (tour.path)}
+                {@const h = health(tour)}
+                {@const i = position.get(tour.path) ?? 0}
+                <li>
+                  <button
+                    class="tour"
+                    class:selected={i === selected}
+                    disabled={tour.unreadable}
+                    onclick={() => open(tour)}
+                    onmousemove={() => (selected = i)}
+                  >
+                    <span class="line">
+                      <span class="title">{tour.title}</span>
+                      {#if tour.unreviewed}
+                        <span class="badge amber">Unreviewed draft</span>
+                      {/if}
+                      <span class="spacer"></span>
+                      <span class="health {h.tone}">{h.text}</span>
+                    </span>
+                    {#if tour.description}
+                      <span class="description">{tour.description}</span>
+                    {/if}
+                    <span class="meta">
+                      {tour.steps}
+                      {tour.steps === 1 ? 'step' : 'steps'}
+                      {#if (tour.repos ?? []).length > 0}· {(tour.repos ?? []).join(', ')}{/if}
+                      · {tour.displayPath}
+                      {#each tour.tags ?? [] as tag (tag)}
+                        <span class="tag">{tag}</span>
+                      {/each}
+                    </span>
+                  </button>
+                </li>
               {/each}
-            </span>
-          </button>
-        </li>
+            </ul>
+          {/if}
+        </section>
       {:else}
-        <li class="none">No tours match “{query}”.</li>
+        <p class="none">No tours match “{query}”.</p>
       {/each}
-    </ul>
+    </div>
 
     <footer>
-      <kbd>/</kbd> search <kbd>↑</kbd><kbd>↓</kbd> choose <kbd>↵</kbd> open <kbd>⌘R</kbd> reload <kbd>⌘O</kbd> open a
+      <kbd>/</kbd> search <kbd>↑</kbd><kbd>↓</kbd> choose <kbd>↵</kbd> open <kbd>⌘R</kbd> reload <kbd>⌘O</kbd> add a
       folder
       <kbd>⌘[</kbd><kbd>⌘]</kbd> back, forward
     </footer>
@@ -164,11 +214,86 @@
     letter-spacing: -0.01em;
   }
 
-  .root {
-    margin: 2px 0 0;
+  .heading {
+    display: flex;
+    align-items: center;
+  }
+
+  .add,
+  .folder-action {
     color: var(--muted);
+    border: 1px solid var(--border);
+    background: var(--raised);
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  .add {
+    padding: 5px 11px;
+    font-size: 13px;
+  }
+
+  .folder-action {
+    padding: 2px 8px;
+    font-size: 12px;
+  }
+
+  .add:hover,
+  .folder-action:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  .folders {
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .folder-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .folder-head h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .root {
+    color: var(--faint);
     font-family: var(--mono);
     font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* A long path loses its start, not the folder at its end. */
+    direction: rtl;
+    text-align: left;
+  }
+
+  .unsaved {
+    color: var(--faint);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .folder-note {
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+  }
+
+  .folder-note.red {
+    color: var(--red);
   }
 
   .filter {
@@ -185,8 +310,6 @@
     list-style: none;
     margin: 0;
     padding: 0;
-    overflow-y: auto;
-    flex: 1;
     display: flex;
     flex-direction: column;
     gap: 6px;

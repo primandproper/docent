@@ -26,7 +26,7 @@ Docent is a native desktop app (macOS only in v1) for walking guided tours of co
 - Author-supplied JavaScript or Svelte inside tours.
 - A hosted web version or a sharing service. Sharing is git.
 - Linux and Windows builds, and forges other than GitHub. Nothing in the design should preclude them later.
-- Editing tours or config. The app never writes config, and the only edit it makes to a tour is recording a review (**Mark reviewed**, below); where any other edit would help, it offers a command to copy. Its other writes are a `git clone` or `git fetch`. Each of these is offered, and happens only once the reader confirms.
+- Editing tours or config. The app never writes config (the one file of its own it keeps is the library, the list of folders the reader added; see Launch and discovery), and the only edit it makes to a tour is recording a review (**Mark reviewed**, below); where any other edit would help, it offers a command to copy. Its other writes are a `git clone` or `git fetch`. Each of these is offered, and happens only once the reader confirms.
 
 ## Users and use cases
 
@@ -48,7 +48,17 @@ The walk view is the product: a step rail, a read-only code pane, a narrative pa
 
 The highlighted map node and the highlighted code band always describe the same step; moving to the next step moves both.
 
-**Launch and discovery.** `docent [path]` opens a window rooted at `path` (default `.`). Docent finds tours in `.tours/`, `.vscode/tours/` and `.github/tours/` (the CodeTour locations), plus any `tourPaths` in the workspace config. The tour picker lists each tour's title, description, the repos it touches, and its health: all anchors resolve, N drifted, or a repo is missing. A tour with `generatedBy` and no `reviewedBy` carries an **Unreviewed draft** badge.
+**Launch and discovery.** `docent [path]` opens a window on the folder `path` (default `.`). Docent finds tours in `.tours/`, `.vscode/tours/` and `.github/tours/` (the CodeTour locations), plus any `tourPaths` in the workspace config. The tour picker lists each tour's title, description, the repos it touches, and its health: all anchors resolve, N drifted, or a repo is missing. A tour with `generatedBy` and no `reviewedBy` carries an **Unreviewed draft** badge.
+
+**The library: several folders at once.** A company's tours rarely live in one place: repo A has its own, repo B has its own, and an org-wide tours repo explains how the two talk to each other. The picker therefore shows any number of folders, each as a group under its own name.
+
+- **Add a folder…** (`⌘O`) asks for a folder in the system's dialog, opens it beside the others and saves it. Saved folders are there every time the app opens.
+- A folder opened from outside (`docent <path>`, `docent open`, a `docent://` link) is shown beside the saved ones and marked **Open for now**. It is gone when the app quits, unless the reader presses **Keep**.
+- **Remove** closes a folder and forgets it. Nothing on disk is deleted.
+- Each folder keeps a context of its own: its `docent.json`, its variables, its editor rules, and the repos cloned beside it. A tour is always read with the configuration of the folder it was found in, so opening the org-wide tours next to repo A changes nothing about how repo A's tours resolve. A tour two folders can both see belongs to the one listed first.
+- Links between tours (`docent:tour/…`, `nextTour`) reach across folders. A tour in the linking tour's own folder is meant before a namesake in another, so two folders can each have an `overview.tour`.
+- The list is saved in `~/.config/docent/library.json`, a file of its own beside the user config. It is the one file the app writes that isn't a tour: a list of folder paths, each of which the reader picked in a dialog or was already looking at. `config.json` is still never written, because that is where editor commands come from. A saved folder that has since been deleted is listed with a note, so it can be removed.
+- The CLI never reads the library. `docent validate`, `stale`, `stamp` and `review` see one folder, so their answers don't depend on what a machine happens to have saved. A link into a tour that lives in another folder is therefore a warning there (`tour-link-unknown`), not an error; the app, with both folders open, checks it fully.
 
 **Walk view**
 
@@ -259,6 +269,7 @@ The bindings layer is the trust boundary. The CLI skips it and calls the same se
 | Package | Interface | Responsibility |
 | --- | --- | --- |
 | `workspace` | `RepoResolver` | Load `docent.json` and user config, then resolve repo names to roots in the order above. |
+| `library` | `Store` | The saved list of folders the app opens, in `~/.config/docent/library.json`. |
 | `tour` | `TourStore` | Discover, parse, validate (JSON Schema via `santhosh-tekuri/jsonschema`) and normalize tours into the internal model. Watch files with `fsnotify`. |
 | `gitsrc` | `FileSource` | Read file bytes at a ref or from the working tree. Keep one long-lived `git cat-file --batch` process per repo rather than using go-git, for fidelity with partial clones and worktrees. |
 | `anchor` | `AnchorResolver` | Turn `line`, `selection` and `pattern` into concrete ranges plus a drift status. |
@@ -280,7 +291,7 @@ The bindings layer is the trust boundary. The CLI skips it and calls the same se
 
 ## CLI and agent authoring
 
-Agents author through the CLI and files; people review in the app. The app never writes config, and its one edit to a tour is the review a reader signs with **Mark reviewed**, so a tour otherwise changes only through an editor, an agent, or an explicit CLI command.
+Agents author through the CLI and files; people review in the app. The app never writes config (only its own list of folders), and its one edit to a tour is the review a reader signs with **Mark reviewed**, so a tour otherwise changes only through an editor, an agent, or an explicit CLI command.
 
 | Command | Does |
 | --- | --- |

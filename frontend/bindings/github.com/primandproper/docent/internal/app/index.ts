@@ -9,12 +9,12 @@ export {
 export type {
     AnchorView,
     FileView,
+    Folder,
     LaunchRequest,
     ReviewState,
     StepSummary,
     StepView,
     TourSummary,
     TourView,
-    VarView,
-    Workspace
+    VarView
 } from "./models.js";

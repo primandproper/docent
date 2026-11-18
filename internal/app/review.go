@@ -204,7 +204,7 @@ func (s *Service) Review(ctx context.Context, path, name string) error {
 
 	// The file is read again, and what was read is checked against it: a tour
 	// edited since it was walked hasn't been walked.
-	t, _, err := s.svc().Store.Load(ctx, path)
+	t, _, err := s.svc(path).Store.Load(ctx, path)
 	if err != nil {
 		return observability.PrepareAndLogError(err, logger, span, "loading tour")
 	}
@@ -226,7 +226,7 @@ func (s *Service) Review(ctx context.Context, path, name string) error {
 
 	review := &tour.Review{Name: name, At: time.Now().UTC().Format(time.RFC3339)}
 
-	if _, err = stamp.Apply(ctx, s.svc().Walker, t, &stamp.Options{Hashes: true, Review: review}); err != nil {
+	if _, err = stamp.Apply(ctx, s.svc(path).Walker, t, &stamp.Options{Hashes: true, Review: review}); err != nil {
 		return observability.PrepareAndLogError(err, logger, span, "stamping")
 	}
 

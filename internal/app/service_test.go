@@ -13,6 +13,7 @@ import (
 	"github.com/primandproper/docent/internal/diag"
 	"github.com/primandproper/docent/internal/editor"
 	"github.com/primandproper/docent/internal/gitsrc"
+	"github.com/primandproper/docent/internal/library"
 	"github.com/primandproper/docent/internal/links"
 	"github.com/primandproper/docent/internal/tour"
 	"github.com/primandproper/docent/internal/validate"
@@ -89,13 +90,16 @@ func newServiceWith(repos workspace.RepoResolver) (*Service, *fakeLauncher) {
 	vars := links.NewVars(&workspace.Config{}, nil)
 	walker := walk.NewWalker(&walk.Dependencies{Source: source, Repos: repos, Vars: vars})
 	services := &core.Core{
-		Config:    &workspace.Config{},
-		Vars:      vars,
-		Store:     store,
-		Source:    source,
-		Repos:     repos,
-		Walker:    walker,
-		Validator: validate.NewValidator(store, walker, func(ctx context.Context) ([]string, error) { return store.Discover(ctx, "/r") }, nil, nil),
+		Config: &workspace.Config{},
+		Vars:   vars,
+		Store:  store,
+		Source: source,
+		Repos:  repos,
+		Walker: walker,
+		Validator: validate.NewValidator(store, walker, func(ctx context.Context) ([][]string, error) {
+			paths, err := store.Discover(ctx, "/r")
+			return [][]string{paths}, err
+		}, nil, nil),
 	}
 	launcher := &fakeLauncher{}
 
@@ -124,7 +128,7 @@ func TestService_ListTours(T *testing.T) {
 		must.Len(t, 3, tours)
 
 		test.Eq(t, TourSummary{
-			Path: mainTour, DisplayPath: ".tours/main.tour", Title: "Main", Description: "The big one",
+			Path: mainTour, Folder: "/r", DisplayPath: ".tours/main.tour", Title: "Main", Description: "The big one",
 			Tags: []string{}, Repos: []string{}, Steps: 7, Errors: 1, Warnings: 1, IsPrimary: true,
 		}, tours[0])
 
@@ -270,408 +274,299 @@ func TestService_Step(T *testing.T) {
 	})
 }
 
-func TestService_Workspace(T *testing.T) {
+func TestService_Folders(T *testing.T) {
 	T.Parallel()
 
-	T.Run("names the opened folder", func(t *testing.T) {
+	T.Run("names the folder it was given", func(t *testing.T) {
 		t.Parallel()
 
-		test.Eq(t, Workspace{Root: "/r", Name: "r"}, newService().Workspace())
-	})
-}
-
-func TestService_Narrative(T *testing.T) {
-	T.Parallel()
-
-	T.Run("a step carries its body and its expanded link cards", func(t *testing.T) {
-		t.Parallel()
-
-		s := newService()
-		view, err := s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-		test.Eq(t, []VarView{
-			{Name: "env", Value: "staging", Source: links.SourceTour, Choices: []string{"staging", "prod"}},
-			{Name: "team", Choices: []string{}},
-		}, view.Vars)
-
-		step, err := s.Step(t.Context(), draftTour, 0)
-		must.NoError(t, err)
-		test.Eq(t, "# One\n\nThe long version.\n", step.Body)
-		test.Eq(t, "", step.BodyProblem)
-		must.Len(t, 2, step.Links)
-		test.Eq(t, "https://grafana.example.com/d/abc?env=staging", step.Links[0].URL)
-		test.Eq(t, "grafana.example.com", step.Links[0].Host)
-		test.Eq(t, []string{"logs"}, step.Links[1].Missing)
-	})
-
-	T.Run("a missing body says so and the step still loads", func(t *testing.T) {
-		t.Parallel()
-
-		s := newService()
-		_, err := s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-
-		step, err := s.Step(t.Context(), draftTour, 2)
-		must.NoError(t, err)
-		test.Eq(t, "", step.Body)
-		test.StrContains(t, step.BodyProblem, `body "draft/gone.md" does not exist`)
-	})
-}
-
-func TestService_SetVar(T *testing.T) {
-	T.Parallel()
-
-	T.Run("a picked value changes the links", func(t *testing.T) {
-		t.Parallel()
-
-		s := newService()
-		_, err := s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-
-		vars, err := s.SetVar(t.Context(), draftTour, "env", "prod")
-		must.NoError(t, err)
-		test.Eq(t, "prod", vars[0].Value)
-		test.Eq(t, links.SourcePicker, vars[0].Source)
-
-		step, err := s.Step(t.Context(), draftTour, 0)
-		must.NoError(t, err)
-		test.Eq(t, "https://grafana.example.com/d/abc?env=prod", step.Links[0].URL)
-
-		vars, err = s.SetVar(t.Context(), draftTour, "env", "")
-		must.NoError(t, err)
-		test.Eq(t, "staging", vars[0].Value)
-	})
-
-	T.Run("a free-form variable takes any value", func(t *testing.T) {
-		t.Parallel()
-
-		s := newService()
-		_, err := s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-
-		vars, err := s.SetVar(t.Context(), draftTour, "team", "payments")
-		must.NoError(t, err)
-		test.Eq(t, "payments", vars[1].Value)
-	})
-
-	T.Run("refuses a value outside the choices, an undeclared variable, and a closed tour", func(t *testing.T) {
-		t.Parallel()
-
-		s := newService()
-
-		_, err := s.SetVar(t.Context(), draftTour, "env", "prod")
-		test.ErrorIs(t, err, ErrUnknownTour)
-
-		_, err = s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-
-		_, err = s.SetVar(t.Context(), draftTour, "env", "qa")
-		test.ErrorIs(t, err, ErrBadVariable)
-
-		_, err = s.SetVar(t.Context(), draftTour, "grafana", "https://evil.example.com")
-		test.ErrorIs(t, err, ErrBadVariable)
-	})
-}
-
-func TestService_Repos(T *testing.T) {
-	T.Parallel()
-
-	T.Run("a step in a named repo reads from that checkout", func(t *testing.T) {
-		t.Parallel()
-
-		s, _ := newServiceWith(fixedRepos{root: "/checkouts/api"})
-		view, err := s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-		test.Eq(t, anchor.StatusOK, view.Steps[1].Status)
-
-		step, err := s.Step(t.Context(), draftTour, 1)
-		must.NoError(t, err)
-		test.Eq(t, "api", step.Repo)
-		test.Eq(t, "package items\n", step.Content)
-		test.Eq(t, "", step.CloneCommand)
-	})
-
-	T.Run("a repo that isn't checked out comes with a command to paste", func(t *testing.T) {
-		t.Parallel()
-
-		s, _ := newServiceWith(fixedRepos{})
-		_, err := s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-
-		step, err := s.Step(t.Context(), draftTour, 1)
-		must.NoError(t, err)
-		test.Eq(t, anchor.StatusMissing, step.Location.Status)
-		test.Eq(t, diag.CodeRepoMissing, step.Location.Problem)
-		test.Eq(t, "git clone git@github.com:acme/api.git '/w/my work/api'", step.CloneCommand)
-	})
-}
-
-func TestService_OpenInEditor(T *testing.T) {
-	T.Parallel()
-
-	T.Run("refuses steps with nothing to open, and tours that aren't open", func(t *testing.T) {
-		t.Parallel()
-
-		s, launcher := newServiceWith(nil)
-
-		_, err := s.OpenInEditor(t.Context(), mainTour, 0, -1, "")
-		test.ErrorIs(t, err, ErrUnknownTour)
-
-		_, err = s.OpenTour(t.Context(), mainTour)
-		must.NoError(t, err)
-
-		for _, index := range []int{2, 3, 6} {
-			_, err = s.OpenInEditor(t.Context(), mainTour, index, -1, "")
-			test.ErrorIs(t, err, ErrNotAFile, test.Sprintf("step %d", index))
-		}
-
-		_, err = s.OpenInEditor(t.Context(), mainTour, 99, -1, "")
-		test.ErrorIs(t, err, walk.ErrNoSuchStep)
-		test.Len(t, 0, launcher.opened)
-	})
-
-	T.Run("lists the installed editors", func(t *testing.T) {
-		t.Parallel()
-
-		test.Eq(t, []editor.Editor{{ID: "zed", Name: "Zed"}}, newService().Editors(t.Context()))
-	})
-}
-
-func TestShellJoin(T *testing.T) {
-	T.Parallel()
-
-	T.Run("quotes only what needs it", func(t *testing.T) {
-		t.Parallel()
-
-		test.Eq(t, `git clone git@github.com:acme/api.git '/w/it'\''s here/api' ''`, shellJoin([]string{"git", "clone", "git@github.com:acme/api.git", "/w/it's here/api", ""}))
-		test.Eq(t, "", shellJoin(nil))
-	})
-}
-
-func TestCloneable(T *testing.T) {
-	T.Parallel()
-
-	T.Run("only plain https and ssh remotes", func(t *testing.T) {
-		t.Parallel()
-
-		for _, ok := range []string{"https://github.com/acme/api.git", "ssh://git@github.com/acme/api", "git@github.com:acme/api.git", "deploy_1@git.example.com:team/repo"} {
-			test.True(t, cloneable(ok), test.Sprint(ok))
-		}
-
-		for _, bad := range []string{
-			"", "/srv/git/api", "../api", "file:///srv/git/api", "ext::sh -c touch%20/tmp/pwned", "ext::sh",
-			"-oProxyCommand=evil@host:x", "git@-oProxyCommand=evil:x", "git@host:-x", "http://github.com/acme/api",
-			"git@github.com:acme/api.git --upload-pack=evil", "git@github.com", "fd::7",
-		} {
-			test.False(t, cloneable(bad), test.Sprint(bad))
-		}
-	})
-}
-
-func TestService_RepoActions(T *testing.T) {
-	T.Parallel()
-
-	T.Run("refuse tours that aren't open and repos the tour doesn't have", func(t *testing.T) {
-		t.Parallel()
-
-		s, _ := newServiceWith(fixedRepos{})
-
-		test.ErrorIs(t, s.Fetch(t.Context(), draftTour, "api"), ErrUnknownTour)
-		test.ErrorIs(t, s.Clone(t.Context(), draftTour, "api"), ErrUnknownTour)
-
-		_, err := s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-
-		test.ErrorIs(t, s.Fetch(t.Context(), draftTour, "nope"), walk.ErrNoSuchRepo)
-		test.ErrorIs(t, s.Clone(t.Context(), draftTour, "nope"), walk.ErrNoSuchRepo)
-		// Not checked out, so there is nothing to fetch.
-		test.ErrorIs(t, s.Fetch(t.Context(), draftTour, "api"), walk.ErrNoSuchRepo)
-	})
-
-	T.Run("a repo that is already here can't be cloned again", func(t *testing.T) {
-		t.Parallel()
-
-		s, _ := newServiceWith(fixedRepos{root: "/checkouts/api"})
-		_, err := s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-
-		test.ErrorIs(t, s.Clone(t.Context(), draftTour, "api"), ErrNotCloneable)
-	})
-
-	T.Run("an opened tour reports its repos", func(t *testing.T) {
-		t.Parallel()
-
-		s, _ := newServiceWith(fixedRepos{})
-		view, err := s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-		must.Len(t, 1, view.Repos)
-		test.Eq(t, "api", view.Repos[0].Name)
-		test.False(t, view.Repos[0].Found)
-		test.Eq(t, []string{"git", "clone", "git@github.com:acme/api.git", "/w/my work/api"}, view.Repos[0].CloneCommand)
-		test.False(t, view.WorkingTree)
-
-		s.SetWorkingTree(true)
-
-		view, err = s.OpenTour(t.Context(), draftTour)
-		must.NoError(t, err)
-		test.True(t, view.WorkingTree)
-	})
-}
-
-func TestService_Browse(T *testing.T) {
-	T.Parallel()
-
-	T.Run("lists and reads files of the step's repo, and nothing outside it", func(t *testing.T) {
-		t.Parallel()
-
-		s := newService()
-		_, err := s.OpenTour(t.Context(), mainTour)
-		must.NoError(t, err)
-
-		entries, err := s.Browse(t.Context(), mainTour, 0, -1, "")
-		must.NoError(t, err)
-		test.SliceContains(t, entries, gitsrc.Entry{Name: "docs", IsDir: true})
-		test.SliceContains(t, entries, gitsrc.Entry{Name: "a.go"})
-
-		file, err := s.BrowseFile(t.Context(), mainTour, 0, -1, "docs/x.md")
-		must.NoError(t, err)
-		test.Eq(t, &FileView{Path: "docs/x.md", Content: "x\n"}, file)
-
-		file, err = s.BrowseFile(t.Context(), mainTour, 0, -1, "bin/blob")
-		must.NoError(t, err)
-		test.Eq(t, "This is a binary file.", file.Unavailable)
-
-		_, err = s.BrowseFile(t.Context(), mainTour, 0, -1, "../outside")
-		test.ErrorIs(t, err, gitsrc.ErrEscapesRoot)
-
-		_, err = s.Browse(t.Context(), mainTour, 0, -1, "../..")
-		test.ErrorIs(t, err, gitsrc.ErrEscapesRoot)
-	})
-
-	T.Run("only steps with code can be browsed", func(t *testing.T) {
-		t.Parallel()
-
-		s := newService()
-
-		_, err := s.Browse(t.Context(), mainTour, 0, -1, "")
-		test.ErrorIs(t, err, ErrUnknownTour)
-
-		_, err = s.OpenTour(t.Context(), mainTour)
-		must.NoError(t, err)
-
-		_, err = s.Browse(t.Context(), mainTour, 6, -1, "")
-		test.ErrorIs(t, err, ErrNotAFile)
-
-		_, err = s.Browse(t.Context(), mainTour, 0, 3, "")
-		test.ErrorIs(t, err, ErrNotAFile)
+		folders := newService().Folders()
+		must.Len(t, 1, folders)
+		test.Eq(t, "/r", folders[0].Root)
+		test.Eq(t, "r", folders[0].Name)
+		test.False(t, folders[0].Saved)
 	})
 }
 
 func TestService_Launch(T *testing.T) {
 	T.Parallel()
 
-	// A real folder with one tour, and a service that starts with no folder.
-	setup := func(t *testing.T) (svc *Service, tourPath string, rooted *[]string) {
+	// Two real folders of tours, and a service that starts with neither. The
+	// feature tour links into the cron tour, which lives in the other folder.
+	type world struct {
+		svc     *Service
+		library *library.Memory
+		opened  *[][]string
+		choose  *string
+		feature string
+		cron    string
+		a, b    string
+	}
+
+	setup := func(t *testing.T) *world {
 		t.Helper()
 
 		dir, err := filepath.EvalSymlinks(t.TempDir())
 		must.NoError(t, err)
 
-		tourPath = filepath.Join(dir, ".tours", "a.tour")
-		must.NoError(t, os.MkdirAll(filepath.Dir(tourPath), 0o750))
-		must.NoError(t, os.WriteFile(tourPath, []byte(`{"title": "A", "steps": [{"description": "d"}]}`), 0o600))
+		w := &world{a: filepath.Join(dir, "a"), b: filepath.Join(dir, "b"), library: &library.Memory{}}
+		w.feature = filepath.Join(w.a, ".tours", "feature.tour")
+		w.cron = filepath.Join(w.b, ".tours", "cron.tour")
 
-		rebuild := func(root string) (*core.Core, error) {
-			return core.New(&core.Options{Root: root, UserConfigPath: filepath.Join(dir, "no-config.json")})
+		for path, content := range map[string]string{
+			w.feature: `{"docent": 1, "title": "Feature", "nextTour": "Cron",
+				"vars": { "grafana": { "description": "Grafana" } },
+				"steps": [{"id": "s", "description": "It runs [on a schedule](docent:tour/cron.tour#scheduling)."}]}`,
+			w.cron:                            `{"docent": 1, "title": "Cron", "steps": [{"id": "scheduling", "description": "d"}]}`,
+			filepath.Join(w.a, "docent.json"): `{"vars": {"grafana": "https://grafana.a.example"}}`,
+		} {
+			must.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
+			must.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 		}
 
-		empty, err := rebuild("")
+		rebuild := func(root string) (*core.Core, error) {
+			return core.New(&core.Options{Root: root, Elsewhere: w.svc.elsewhere(root), UserConfigPath: filepath.Join(dir, "no-config.json")})
+		}
+
+		empty, err := core.New(&core.Options{UserConfigPath: filepath.Join(dir, "no-config.json")})
 		must.NoError(t, err)
 
-		svc = NewService("", empty, &fakeLauncher{}, nil, nil)
-		t.Cleanup(func() { svc.svc().Close() })
+		w.svc = NewService("", empty, &fakeLauncher{}, nil, nil)
+		w.svc.setLibrary(w.library)
+		t.Cleanup(w.svc.close)
 
-		var seen []string
+		var (
+			seen   [][]string
+			chosen = w.a
+		)
 
-		svc.setHost(&Host{
+		w.opened, w.choose = &seen, &chosen
+
+		w.svc.setHost(&Host{
 			Rebuild:      rebuild,
-			ChooseFolder: func() (string, error) { return dir, nil },
-			Rooted:       func(root string, _ *core.Core) { seen = append(seen, root) },
+			ChooseFolder: func() (string, error) { return chosen, nil },
+			Opened: func(folders []*core.Core) {
+				roots := make([]string, 0, len(folders))
+				for _, f := range folders {
+					roots = append(roots, f.Config.Root)
+				}
+
+				seen = append(seen, roots)
+			},
 		})
 
-		return svc, tourPath, &seen
+		return w
 	}
 
-	T.Run("with no folder there is no workspace and no tours", func(t *testing.T) {
+	roots := func(folders []Folder) []string {
+		out := make([]string, 0, len(folders))
+		for i := range folders {
+			out = append(out, folders[i].Root)
+		}
+
+		return out
+	}
+
+	T.Run("with no folder there are no folders and no tours", func(t *testing.T) {
 		t.Parallel()
 
-		svc, _, _ := setup(t)
-		test.Eq(t, Workspace{}, svc.Workspace())
+		w := setup(t)
+		test.Len(t, 0, w.svc.Folders())
 
-		tours, err := svc.ListTours(t.Context())
+		tours, err := w.svc.ListTours(t.Context())
 		must.NoError(t, err)
 		test.Len(t, 0, tours)
 	})
 
-	T.Run("choosing a folder opens it", func(t *testing.T) {
+	T.Run("adding a folder opens it and saves it", func(t *testing.T) {
 		t.Parallel()
 
-		svc, tourPath, rooted := setup(t)
+		w := setup(t)
 
-		ws, err := svc.ChooseFolder(t.Context())
+		folders, err := w.svc.AddFolder(t.Context())
 		must.NoError(t, err)
-		test.Eq(t, filepath.Dir(filepath.Dir(tourPath)), ws.Root)
-		test.Eq(t, []string{ws.Root}, *rooted)
+		must.Len(t, 1, folders)
+		test.Eq(t, Folder{Root: w.a, Name: "a", Saved: true}, folders[0])
+		test.Eq(t, []string{w.a}, w.library.Saved)
+		test.Eq(t, [][]string{{w.a}}, *w.opened)
 
-		tours, err := svc.ListTours(t.Context())
+		tours, err := w.svc.ListTours(t.Context())
 		must.NoError(t, err)
 		must.Len(t, 1, tours)
-		test.Eq(t, tourPath, tours[0].Path)
+		test.Eq(t, w.feature, tours[0].Path)
+		test.Eq(t, w.a, tours[0].Folder)
+		test.Eq(t, filepath.Join(".tours", "feature.tour"), tours[0].DisplayPath)
+
+		// Adding it again, or cancelling the dialog, changes nothing.
+		folders, err = w.svc.AddFolder(t.Context())
+		must.NoError(t, err)
+		test.Len(t, 1, folders)
+
+		*w.choose = ""
+		folders, err = w.svc.AddFolder(t.Context())
+		must.NoError(t, err)
+		test.Len(t, 1, folders)
+		test.Eq(t, []string{w.a}, w.library.Saved)
 	})
 
-	T.Run("a docent link moves to the tour's folder and queues it, once", func(t *testing.T) {
+	T.Run("each folder's tours are listed under it, and links reach across", func(t *testing.T) {
 		t.Parallel()
 
-		svc, tourPath, rooted := setup(t)
+		w := setup(t)
 
-		must.NoError(t, svc.openLink(t.Context(), "docent://open?tour="+url.QueryEscape(tourPath)+"&step=intro"))
-		test.Len(t, 1, *rooted)
-		test.Eq(t, LaunchRequest{Tour: tourPath, Step: "intro"}, svc.Launch())
-		test.Eq(t, LaunchRequest{}, svc.Launch())
+		_, err := w.svc.AddFolder(t.Context())
+		must.NoError(t, err)
 
-		// Already in that folder: nothing moves.
-		must.NoError(t, svc.openLink(t.Context(), "docent://open?tour="+url.QueryEscape(tourPath)))
-		test.Len(t, 1, *rooted)
-		test.Eq(t, LaunchRequest{Tour: tourPath}, svc.Launch())
+		// Alone, the feature tour's link and its nextTour lead nowhere.
+		tours, err := w.svc.ListTours(t.Context())
+		must.NoError(t, err)
+		must.Len(t, 1, tours)
+		test.Eq(t, 2, tours[0].Warnings)
+
+		*w.choose = w.b
+		folders, err := w.svc.AddFolder(t.Context())
+		must.NoError(t, err)
+		test.Eq(t, []string{w.a, w.b}, roots(folders))
+
+		tours, err = w.svc.ListTours(t.Context())
+		must.NoError(t, err)
+		must.Len(t, 2, tours)
+		test.Eq(t, w.a, tours[0].Folder)
+		test.Eq(t, w.b, tours[1].Folder)
+		test.Eq(t, 0, tours[0].Warnings+tours[0].Errors)
+
+		// Each tour is read with its own folder's configuration.
+		view, err := w.svc.OpenTour(t.Context(), w.feature)
+		must.NoError(t, err)
+		must.Len(t, 1, view.Vars)
+		test.Eq(t, "https://grafana.a.example", view.Vars[0].Value)
+
+		_, err = w.svc.OpenTour(t.Context(), w.cron)
+		must.NoError(t, err)
+		test.True(t, w.svc.svc(w.feature) != w.svc.svc(w.cron))
+	})
+
+	T.Run("removing a folder closes it and forgets it", func(t *testing.T) {
+		t.Parallel()
+
+		w := setup(t)
+
+		_, err := w.svc.AddFolder(t.Context())
+		must.NoError(t, err)
+		_, err = w.svc.OpenTour(t.Context(), w.feature)
+		must.NoError(t, err)
+
+		_, err = w.svc.RemoveFolder(t.Context(), w.b)
+		test.ErrorIs(t, err, ErrUnknownFolder)
+
+		folders, err := w.svc.RemoveFolder(t.Context(), w.a)
+		must.NoError(t, err)
+		test.Len(t, 0, folders)
+		test.Len(t, 0, w.library.Saved)
+
+		_, err = w.svc.OpenTour(t.Context(), w.feature)
+		test.ErrorIs(t, err, ErrUnknownTour)
+		_, err = w.svc.Step(t.Context(), w.feature, 0)
+		test.ErrorIs(t, err, ErrUnknownTour)
+	})
+
+	T.Run("a docent link opens the tour's folder without saving it, and queues the tour once", func(t *testing.T) {
+		t.Parallel()
+
+		w := setup(t)
+
+		must.NoError(t, w.svc.openLink(t.Context(), "docent://open?tour="+url.QueryEscape(w.feature)+"&step=intro"))
+		test.Len(t, 1, *w.opened)
+		test.Eq(t, LaunchRequest{Tour: w.feature, Step: "intro"}, w.svc.Launch())
+		test.Eq(t, LaunchRequest{}, w.svc.Launch())
+
+		folders := w.svc.Folders()
+		must.Len(t, 1, folders)
+		test.False(t, folders[0].Saved)
+		test.Len(t, 0, w.library.Saved)
+
+		// Already open: nothing more is opened.
+		must.NoError(t, w.svc.openLink(t.Context(), "docent://open?tour="+url.QueryEscape(w.feature)))
+		test.Len(t, 1, w.svc.Folders())
+		test.Eq(t, LaunchRequest{Tour: w.feature}, w.svc.Launch())
+
+		// A second link opens its folder beside the first.
+		must.NoError(t, w.svc.openLink(t.Context(), "docent://open?tour="+url.QueryEscape(w.cron)))
+		test.Eq(t, []string{w.a, w.b}, roots(w.svc.Folders()))
+	})
+
+	T.Run("only a folder that is open can be kept", func(t *testing.T) {
+		t.Parallel()
+
+		w := setup(t)
+
+		_, err := w.svc.KeepFolder(t.Context(), w.a)
+		test.ErrorIs(t, err, ErrUnknownFolder)
+		test.Len(t, 0, w.library.Saved)
+
+		must.NoError(t, w.svc.openFolder(t.Context(), w.a, false))
+
+		folders, err := w.svc.KeepFolder(t.Context(), w.a)
+		must.NoError(t, err)
+		must.Len(t, 1, folders)
+		test.True(t, folders[0].Saved)
+		test.Eq(t, []string{w.a}, w.library.Saved)
+	})
+
+	T.Run("the saved folders are opened at the start, after the one asked for", func(t *testing.T) {
+		t.Parallel()
+
+		w := setup(t)
+		gone := filepath.Join(filepath.Dir(w.a), "gone")
+		w.library.Saved = []string{w.a, gone, w.b}
+
+		must.NoError(t, w.svc.openFolder(t.Context(), w.b, false))
+		must.NoError(t, w.svc.restore(t.Context()))
+
+		folders := w.svc.Folders()
+		test.Eq(t, []string{w.b, w.a, gone}, roots(folders))
+		test.True(t, folders[0].Saved)
+		test.Eq(t, "", folders[1].Problem)
+		test.NotEq(t, "", folders[2].Problem)
+
+		tours, err := w.svc.ListTours(t.Context())
+		must.NoError(t, err)
+		test.Len(t, 2, tours)
+
+		// What is gone can still be removed.
+		folders, err = w.svc.RemoveFolder(t.Context(), gone)
+		must.NoError(t, err)
+		test.Len(t, 2, folders)
+		test.Eq(t, []string{w.a, w.b}, w.library.Saved)
 	})
 
 	T.Run("links that aren't a tour on disk are refused", func(t *testing.T) {
 		t.Parallel()
 
-		svc, tourPath, rooted := setup(t)
+		w := setup(t)
 
 		for _, bad := range []string{
 			"docent://open",
 			"docent://open?tour=relative.tour",
 			"docent://open?tour=/etc/passwd",
-			"docent://open?tour=" + url.QueryEscape(tourPath+".gone.tour"),
-			"docent://run?tour=" + url.QueryEscape(tourPath),
-			"https://open?tour=" + url.QueryEscape(tourPath),
-			"docent://open?tour=" + url.QueryEscape(filepath.Dir(tourPath)),
+			"docent://open?tour=" + url.QueryEscape(w.feature+".gone.tour"),
+			"docent://run?tour=" + url.QueryEscape(w.feature),
+			"https://open?tour=" + url.QueryEscape(w.feature),
+			"docent://open?tour=" + url.QueryEscape(filepath.Dir(w.feature)),
 		} {
-			test.ErrorIs(t, svc.openLink(t.Context(), bad), ErrBadLink, test.Sprint(bad))
+			test.ErrorIs(t, w.svc.openLink(t.Context(), bad), ErrBadLink, test.Sprint(bad))
 		}
 
-		test.Len(t, 0, *rooted)
-		test.Eq(t, LaunchRequest{}, svc.Launch())
+		test.Len(t, 0, *w.opened)
+		test.Eq(t, LaunchRequest{}, w.svc.Launch())
 	})
 
-	T.Run("without a host the folder can't change", func(t *testing.T) {
+	T.Run("without a host no folder can be opened", func(t *testing.T) {
 		t.Parallel()
 
 		s := newService()
 
-		_, err := s.ChooseFolder(t.Context())
+		_, err := s.AddFolder(t.Context())
 		test.ErrorIs(t, err, ErrNoHost)
 		test.ErrorIs(t, s.requestTour(t.Context(), "/elsewhere/.tours/x.tour", ""), ErrNoHost)
 	})

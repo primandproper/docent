@@ -62,6 +62,9 @@ type (
 		LogDir string
 		// UserConfigPath overrides ~/.config/docent/config.json.
 		UserConfigPath string
+		// LibraryPath overrides ~/.config/docent/library.json, the folders
+		// the app was told to keep.
+		LibraryPath string
 		// Args are the command-line arguments, without the program name.
 		Args []string
 	}
@@ -76,6 +79,7 @@ type (
 		systemLogger   *slog.Logger
 		logDir         string
 		userConfigPath string
+		libraryPath    string
 	}
 )
 
@@ -90,6 +94,7 @@ func Execute(ctx context.Context, opts *Options) int {
 		streams:        opts.Streams,
 		logDir:         opts.LogDir,
 		userConfigPath: opts.UserConfigPath,
+		libraryPath:    opts.LibraryPath,
 		tracerProvider: tracingnoop.NewTracerProvider(),
 	}
 	defer a.shutdown()
@@ -237,6 +242,7 @@ func (a *application) runApp(ctx context.Context, opts *app.Options) error {
 	opts.Logger = a.log()
 	opts.SystemLogger = a.systemLogger
 	opts.TracerProvider = a.tracerProvider
+	opts.LibraryPath = a.libraryPath
 
 	a.log().WithValues(map[string]any{"root": opts.Root, "tour": opts.Tour}).Info("opening app")
 

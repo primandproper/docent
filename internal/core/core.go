@@ -29,6 +29,9 @@ type (
 		TracerProvider tracing.Provider
 		// Root is the absolute path of the opened folder.
 		Root string
+		// Elsewhere lists the tours of the other folders that are open, when
+		// there are any, so a link into one of them can be checked.
+		Elsewhere func(ctx context.Context) ([]string, error)
 		// UserConfigPath overrides ~/.config/docent/config.json. Tests set it.
 		UserConfigPath string
 	}
@@ -92,14 +95,31 @@ func New(opts *Options) (*Core, error) {
 		Logger:         opts.Logger,
 		TracerProvider: opts.TracerProvider,
 	})
-	// Links between tours are checked against the tours this folder shows.
-	// With no folder open there are none.
-	discover := func(ctx context.Context) ([]string, error) {
+	// Links between tours are checked against the tours this folder shows,
+	// then those of any other folder that is open. With no folder open there
+	// are none.
+	discover := func(ctx context.Context) ([][]string, error) {
 		if config.Root == "" {
 			return nil, nil
 		}
 
-		return c.Store.Discover(ctx, config.Root, config.TourPaths()...)
+		own, discoverErr := c.Store.Discover(ctx, config.Root, config.TourPaths()...)
+		if discoverErr != nil {
+			return nil, discoverErr
+		}
+
+		tiers := [][]string{own}
+
+		if opts.Elsewhere != nil {
+			others, elseErr := opts.Elsewhere(ctx)
+			if elseErr != nil {
+				return nil, elseErr
+			}
+
+			tiers = append(tiers, others)
+		}
+
+		return tiers, nil
 	}
 
 	c.Validator = validate.NewValidator(c.Store, c.Walker, discover, opts.Logger, opts.TracerProvider)

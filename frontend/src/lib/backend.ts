@@ -13,7 +13,7 @@ function required<T>(value: T | null, what: string): T {
 }
 
 export const backend: Api = {
-  workspace: () => Service.Workspace(),
+  folders: async () => (await Service.Folders()) ?? [],
   listTours: async () => (await Service.ListTours()) ?? [],
   openTour: async (path) => required(await Service.OpenTour(path), 'tour'),
   step: async (path, index) => required(await Service.Step(path, index), 'step'),
@@ -31,7 +31,9 @@ export const backend: Api = {
   browseFile: async (path, index, extra, file) => required(await Service.BrowseFile(path, index, extra, file), 'file'),
   copy: (text) => Clipboard.SetText(text),
   launch: () => Service.Launch(),
-  chooseFolder: () => Service.ChooseFolder(),
+  addFolder: async () => (await Service.AddFolder()) ?? [],
+  keepFolder: async (root) => (await Service.KeepFolder(root)) ?? [],
+  removeFolder: async (root) => (await Service.RemoveFolder(root)) ?? [],
   // Must match app.OpenEvent in Go.
   onOpen: (callback) => Events.On('docent:open' as never, callback),
   // Must match app.ChangedEvent in Go.

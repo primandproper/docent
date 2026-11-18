@@ -28,7 +28,7 @@
       if (event.key === 'r') {
         void session.reload();
       } else if (event.key === 'o') {
-        void session.chooseFolder();
+        void session.addFolder();
       } else if (event.key === '[' || (event.key === 'ArrowLeft' && !isTyping(event.target))) {
         // In a text field ⌘← and ⌘→ move the caret to the ends of the line.
         void session.back();

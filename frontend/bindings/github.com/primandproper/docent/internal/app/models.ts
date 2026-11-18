@@ -47,6 +47,29 @@ export interface FileView {
 }
 
 /**
+ * Folder is one of the folders of tours the app is showing.
+ */
+export interface Folder {
+    /**
+     * Root is the folder's absolute path. It identifies the folder.
+     */
+    "root": string;
+    "name": string;
+
+    /**
+     * Problem says why the folder shows no tours, when it can't be read.
+     */
+    "problem": string;
+
+    /**
+     * Saved is set for a folder kept in the library, which is there
+     * again next time. One opened from the command line, or by a link,
+     * lasts until the app quits unless it is kept.
+     */
+    "saved": boolean;
+}
+
+/**
  * Service is the API the frontend calls.
  * LaunchRequest is a tour the app was asked to open from outside: by
  * `docent open`, or by a docent:// link.
@@ -195,7 +218,12 @@ export interface TourSummary {
     "path": string;
 
     /**
-     * DisplayPath is Path relative to the workspace, when it is inside it.
+     * Folder is the Root of the folder the tour was found in.
+     */
+    "folder": string;
+
+    /**
+     * DisplayPath is Path relative to its folder, when it is inside it.
      */
     "displayPath": string;
     "title": string;
@@ -284,12 +312,4 @@ export interface VarView {
      * outranks the picker.
      */
     "locked": boolean;
-}
-
-/**
- * Workspace describes the folder the app was opened on.
- */
-export interface Workspace {
-    "root": string;
-    "name": string;
 }

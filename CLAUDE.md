@@ -27,10 +27,13 @@ product design and the source of truth for what gets built; milestones M0 to M5 
 - `internal/validate`: turns resolved steps into diagnostics.
 - `internal/workspace`: `docent.json` and the user config, and `RepoResolver`, which maps a tour's repos to local
   checkouts (mapping, then sibling folder, then origin URL).
+- `internal/library`: `library.json`, the folders the reader added in the app. The only config-like file the app
+  writes. The CLI never reads it, except `docent doctor` to print it.
 - `internal/links`: expands `{{var}}` link templates and refuses anything that isn't http(s).
 - `internal/editor`: `Launcher`, open-in-editor with detection and fallback. Commands come from built-in presets or
   the user config only, never from a tour or a workspace file.
-- `internal/core`: wires the services for one opened folder. The app and every CLI command build a `core.Core`.
+- `internal/core`: wires the services for one opened folder. Every CLI command builds a `core.Core`; the app builds
+  one per open folder (`internal/app/folders.go`), so each folder keeps its own `docent.json`, vars and repos.
 - `internal/guide`: `guide.md`, the authoring guide `docent guide` prints. It documents only what is built: update
   it in the same change as any tour-format or CLI change.
 - `internal/diag`: the diagnostic type and codes. The JSON shape and the codes are a stable contract: add, never
@@ -67,10 +70,15 @@ make test_e2e ARGS=--ui # browser tests only
 ## Conventions
 
 - Every exported method of `app.Service` is callable from the webview. Anything the frontend must not be able to
-  do (change folder without a dialog, queue a tour) stays unexported.
+  do (open a folder without a dialog, queue a tour) stays unexported. `AddFolder` takes no path for that reason;
+  `KeepFolder` and `RemoveFolder` take a root but only act on a folder that is already open.
 - The app never writes config, and makes one edit to a tour: `Service.Review` appends a `reviewedBy` entry and
-  stamps it. Its other writes are a `git fetch` or `git clone`. All three happen only after the reader confirmed in
-  the UI; a remote from a tour is checked by `cloneable` before git sees it.
+  stamps it. Its other writes are a `git fetch` or `git clone`, and `library.json`, its own list of folders. All
+  happen only after the reader confirmed in the UI; a remote from a tour is checked by `cloneable` before git
+  sees it.
+- A tour belongs to one folder, and every call about it goes to that folder's services (`Service.svc(path)`).
+  Links between tours prefer the linking tour's folder, in the validator (`Discoverer` tiers) and in the frontend
+  (`nearest` in `src/lib/folders.ts`): keep the two agreeing.
 - A review is only accepted once every step was read in this run of the app. The frontend reports a step read after
   it has stayed on screen (`READ_AFTER_MS`), but `Service` keeps the count and is what refuses: it resets when the
   tour file changes or the working-tree toggle flips, and it is never saved.
@@ -100,4 +108,5 @@ make test_e2e ARGS=--ui # browser tests only
 - CLI tests pass `UserConfigPath` and `LogDir` so they never touch the real `~/.config/docent` or log folder. Keep
   new tests hermetic the same way.
 - Browser tests run the production bundle in WebKit with `--mode mock`, which swaps `src/lib/backend.ts` for
-  `backend.mock.ts`. The fixture workspace is `frontend/e2e/testdata/workspace`.
+  `backend.mock.ts`. The fixture folders are `frontend/e2e/testdata/workspace` and `handbook`; the mock starts with
+  only the first open, and its Add a folder "picks" the next.

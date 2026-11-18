@@ -47,6 +47,7 @@ func run(t *testing.T, args ...string) (code int, stdout, stderr string) {
 		LogDir:  t.TempDir(),
 		// The tests must not read the config of whoever is running them.
 		UserConfigPath: filepath.Join(t.TempDir(), "config.json"),
+		LibraryPath:    filepath.Join(t.TempDir(), "library.json"),
 	})
 
 	return code, out.String(), errOut.String()
@@ -183,6 +184,7 @@ func TestRoot(T *testing.T) {
 			Streams:        Streams{Stdout: &out, Stderr: &errOut},
 			LogDir:         logDir,
 			UserConfigPath: filepath.Join(t.TempDir(), "config.json"),
+			LibraryPath:    filepath.Join(t.TempDir(), "library.json"),
 		})
 		must.Eq(t, ExitClean, code)
 		test.Eq(t, "0 errors, 0 warnings in 1 tour\n", out.String())

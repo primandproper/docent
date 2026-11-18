@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/primandproper/docent/internal/editor"
+	"github.com/primandproper/docent/internal/library"
 	"github.com/primandproper/docent/internal/logs"
 	"github.com/primandproper/docent/internal/version"
 	"github.com/primandproper/docent/internal/workspace"
@@ -79,6 +81,35 @@ func (a *application) doctor(ctx context.Context, path string) error {
 	line("user config", describeUserConfig(a.userConfigPath, cfg.UserPath))
 	line("repo roots", strings.Join(cfg.RepoRoots(), ", "))
 	line("tour paths", orNone(strings.Join(cfg.TourPaths(), ", ")))
+
+	// The app opens these beside whatever folder it is given. Commands like
+	// validate and stale never look at them.
+	b.WriteString("\nlibrary\n")
+
+	libraryPath := a.libraryPath
+	if libraryPath == "" {
+		libraryPath, _ = library.Path() //nolint:errcheck // an empty path reads as an empty library
+	}
+
+	line("file", libraryPath)
+
+	saved, libErr := library.NewStore(libraryPath, a.log(), a.tracerProvider).Folders(ctx)
+
+	switch {
+	case libErr != nil:
+		line("error", libErr.Error())
+	case len(saved) == 0:
+		line("folders", "(none)")
+	default:
+		for _, folder := range saved {
+			note := ""
+			if info, statErr := os.Stat(folder); statErr != nil || !info.IsDir() {
+				note = " (not there)"
+			}
+
+			line("folder", folder+note)
+		}
+	}
 
 	b.WriteString("\neditors\n")
 

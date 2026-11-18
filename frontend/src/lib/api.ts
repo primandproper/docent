@@ -2,12 +2,12 @@
 // themselves live in ./backend, which browser tests swap for a recorded one.
 import type {
   FileView,
+  Folder,
   ReviewState,
   StepView,
   TourSummary,
   TourView,
   VarView,
-  Workspace,
 } from '../../bindings/github.com/primandproper/docent/internal/app';
 import type { Editor, Result as EditorResult } from '../../bindings/github.com/primandproper/docent/internal/editor';
 import type { Entry } from '../../bindings/github.com/primandproper/docent/internal/gitsrc';
@@ -17,13 +17,13 @@ import { backend } from './backend';
 export type {
   AnchorView,
   FileView,
+  Folder,
   ReviewState,
   StepSummary,
   StepView,
   TourSummary,
   TourView,
   VarView,
-  Workspace,
 } from '../../bindings/github.com/primandproper/docent/internal/app';
 export type { Editor, Result as EditorResult } from '../../bindings/github.com/primandproper/docent/internal/editor';
 export type { RepoState, Ref } from '../../bindings/github.com/primandproper/docent/internal/walk';
@@ -60,7 +60,9 @@ export type MapMessage =
   | { kind: 'zoom' };
 
 export interface Api {
-  workspace(): Promise<Workspace>;
+  /** The folders of tours that are open, in the order to show them. */
+  folders(): Promise<Folder[]>;
+  /** Every open folder's tours, folder by folder. */
   listTours(): Promise<TourSummary[]>;
   openTour(path: string): Promise<TourView>;
   step(path: string, index: number): Promise<StepView>;
@@ -95,8 +97,15 @@ export interface Api {
   copy(text: string): Promise<void>;
   /** The tour the app was asked to open from outside (`docent open`, a docent:// link), once. */
   launch(): Promise<{ tour: string; step: string }>;
-  /** Asks the reader for a folder and opens it. Resolves to the workspace as it now is. */
-  chooseFolder(): Promise<Workspace>;
+  /**
+   * Asks the reader for a folder, opens it beside the others and saves it, so it is there next time. Resolves to
+   * the folders as they now are.
+   */
+  addFolder(): Promise<Folder[]>;
+  /** Saves a folder that is open only for now: one from the command line or a link. */
+  keepFolder(root: string): Promise<Folder[]>;
+  /** Closes a folder and forgets it. Nothing on disk is deleted. */
+  removeFolder(root: string): Promise<Folder[]>;
   /** Gives the system map a window of its own, floating above this one, or closes that window if it is open. */
   toggleMapWindow(): Promise<void>;
   /** Calls back when the map window has closed, whoever closed it. */
