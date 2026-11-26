@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/primandproper/docent/internal/diag"
+	"github.com/primandproper/docent/internal/secrets"
 
 	"github.com/shoenig/test"
 	"github.com/shoenig/test/must"
@@ -48,6 +49,8 @@ func run(t *testing.T, args ...string) (code int, stdout, stderr string) {
 		// The tests must not read the config of whoever is running them.
 		UserConfigPath: filepath.Join(t.TempDir(), "config.json"),
 		LibraryPath:    filepath.Join(t.TempDir(), "library.json"),
+		Secrets:        &secrets.Memory{},
+		Getenv:         func(string) string { return "" },
 	})
 
 	return code, out.String(), errOut.String()
@@ -185,6 +188,8 @@ func TestRoot(T *testing.T) {
 			LogDir:         logDir,
 			UserConfigPath: filepath.Join(t.TempDir(), "config.json"),
 			LibraryPath:    filepath.Join(t.TempDir(), "library.json"),
+			Secrets:        &secrets.Memory{},
+			Getenv:         func(string) string { return "" },
 		})
 		must.Eq(t, ExitClean, code)
 		test.Eq(t, "0 errors, 0 warnings in 1 tour\n", out.String())

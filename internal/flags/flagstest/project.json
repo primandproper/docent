@@ -1,0 +1,102 @@
+{
+  "segments": {
+    "checkout-pilot": {"name": "Checkout pilot", "description": "The eighteen merchants who agreed to try the one-page checkout.",
+      "includedContexts": [{"contextKind": "account", "values": ["a1","a2","a3","a4","a5","a6","a7","a8","a9","a10","a11","a12","a13","a14","a15","a16","a17","a18"]}],
+      "excluded": ["u-771", "u-902"]},
+    "beta-testers": {"name": "Beta testers", "included": ["u1","u2","u3","u4","u5","u6","u7","u8","u9","u10","u11","u12"]},
+    "internal-staff": {"name": "Internal staff", "rules": [{"clauses": [{"attribute": "email", "op": "endsWith", "values": ["@acme.example.com"], "contextKind": "user"}]}]},
+    "high-risk-accounts": {"name": "High-risk accounts", "description": "Flagged by the fraud model in the last 30 days.",
+      "included": ["u-13", "u-88", "u-140"],
+      "rules": [{"clauses": [{"attribute": "chargebacks90d", "op": "greaterThan", "values": [2], "contextKind": "account"}]},
+                {"clauses": [{"attribute": "riskScore", "op": "greaterThanOrEqual", "values": [0.8], "contextKind": "account"}, {"attribute": "country", "op": "in", "values": ["US"], "negate": true, "contextKind": "user"}]}]}
+  },
+  "flags": {
+    "new-checkout-flow": {
+      "name": "New checkout flow", "kind": "boolean",
+      "description": "Routes checkout through the v2 pricing service.",
+      "variations": [{"value": true, "name": "v2"}, {"value": false, "name": "v1"}],
+      "environments": {
+        "production": {
+          "_environmentName": "Production", "on": true, "offVariation": 1,
+          "_site": {"href": "/default/production/features/new-checkout-flow"},
+          "prerequisites": [{"key": "pricing-service-v2", "variation": 0}],
+          "targets": [{"values": ["acct-17", "acct-204", "acct-311"], "variation": 0, "contextKind": "account"}],
+          "rules": [
+            {"description": "Beta customers", "variation": 0,
+             "clauses": [{"attribute": "segmentMatch", "op": "segmentMatch", "values": ["beta-testers", "internal-staff"], "contextKind": "user"}]},
+            {"description": "North America ramp",
+             "clauses": [{"attribute": "country", "op": "in", "values": ["US", "CA"], "contextKind": "user"},
+                         {"attribute": "plan", "op": "in", "values": ["free"], "negate": true, "contextKind": "account"}],
+             "rollout": {"bucketBy": "key", "variations": [{"variation": 0, "weight": 25000}, {"variation": 1, "weight": 75000}]}}
+          ],
+          "fallthrough": {"variation": 1}
+        },
+        "staging": {"_environmentName": "Staging", "on": true, "offVariation": 1, "fallthrough": {"variation": 0}},
+        "test": {"_environmentName": "Test", "on": false, "offVariation": 1, "fallthrough": {"variation": 0}}
+      }
+    },
+    "one-page-checkout": {
+      "name": "One-page checkout", "kind": "multivariate",
+      "description": "The checkout page's layout and which steps it shows.",
+      "variations": [
+        {"name": "Classic", "value": {"layout": "classic", "steps": ["cart", "address", "shipping", "payment", "review"]}},
+        {"name": "One page", "value": {"layout": "one-page", "steps": ["cart", "details"], "autofill": {"address": true, "card": false}}}
+      ],
+      "environments": {
+        "production": {"_environmentName": "Production", "on": true, "offVariation": 0,
+          "rules": [{"description": "Pilot merchants only", "variation": 1,
+                     "clauses": [{"attribute": "segmentMatch", "op": "segmentMatch", "values": ["checkout-pilot"], "contextKind": "account"}]}],
+          "fallthrough": {"variation": 0}},
+        "staging": {"_environmentName": "Staging", "on": true, "offVariation": 0, "fallthrough": {"variation": 1}},
+        "test": {"_environmentName": "Test", "on": true, "offVariation": 0, "fallthrough": {"variation": 1}}
+      }
+    },
+    "payment-routing": {
+      "name": "Payment routing", "kind": "multivariate",
+      "description": "Which processor takes a payment, with what retry and 3-D Secure policy.",
+      "variations": [
+        {"name": "Stripe (default)", "value": {"processor": "stripe", "threeDS": "auto", "retry": {"attempts": 2, "backoffMs": 200}}},
+        {"name": "Adyen, EU", "value": {"processor": "adyen", "threeDS": "always", "retry": {"attempts": 1, "backoffMs": 500}, "region": "eu-west"}},
+        {"name": "Stripe, strict", "value": {"processor": "stripe", "threeDS": "always", "retry": {"attempts": 0}, "manualReview": true}},
+        {"name": "Braintree, legacy", "value": {"processor": "braintree", "threeDS": "off", "retry": {"attempts": 3, "backoffMs": 100}}},
+        {"name": "Dual-write", "value": {"processor": "stripe", "shadow": "adyen", "threeDS": "auto", "compare": ["latency", "declines"]}}
+      ],
+      "environments": {
+        "production": {"_environmentName": "Production", "on": true, "offVariation": 0,
+          "contextTargets": [{"values": ["acct-9"], "variation": 3, "contextKind": "account"}],
+          "rules": [
+            {"description": "Fraud holds", "variation": 2,
+             "clauses": [{"attribute": "segmentMatch", "op": "segmentMatch", "values": ["high-risk-accounts"], "contextKind": "account"}]},
+            {"description": "EU cards", "variation": 1,
+             "clauses": [{"attribute": "country", "op": "in", "values": ["DE", "FR", "NL", "ES", "IT"], "contextKind": "user"},
+                         {"attribute": "cardBrand", "op": "in", "values": ["amex"], "negate": true, "contextKind": "payment"}]},
+            {"description": "Old mobile apps", "variation": 3,
+             "clauses": [{"attribute": "appVersion", "op": "semVerLessThan", "values": ["4.2.0"], "contextKind": "device"}]},
+            {"description": "Large orders", "variation": 2,
+             "clauses": [{"attribute": "orderTotal", "op": "greaterThan", "values": [5000], "contextKind": "order"},
+                         {"attribute": "plan", "op": "in", "values": ["enterprise"], "negate": true, "contextKind": "account"}]},
+            {"description": "Staff dogfood", "variation": 4,
+             "clauses": [{"attribute": "segmentMatch", "op": "segmentMatch", "values": ["internal-staff", "beta-testers", "deleted-segment"], "contextKind": "user"}]},
+            {"description": "Adyen migration ramp",
+             "clauses": [{"attribute": "country", "op": "in", "values": ["GB"], "contextKind": "user"}],
+             "rollout": {"bucketBy": "key", "variations": [{"variation": 0, "weight": 70000}, {"variation": 1, "weight": 20000}, {"variation": 4, "weight": 10000}]}}
+          ],
+          "fallthrough": {"variation": 0}},
+        "staging": {"_environmentName": "Staging", "on": false, "offVariation": 0,
+          "rules": [{"description": "Staff dogfood", "variation": 4,
+                     "clauses": [{"attribute": "segmentMatch", "op": "segmentMatch", "values": ["internal-staff"], "contextKind": "user"}]}],
+          "fallthrough": {"variation": 4}},
+        "test": {"_environmentName": "Test", "on": true, "offVariation": 0, "fallthrough": {"variation": 0}}
+      }
+    },
+    "legacy-coupon-path": {
+      "name": "Legacy coupon path", "kind": "boolean", "archived": true,
+      "variations": [{"value": true}, {"value": false}],
+      "environments": {
+        "production": {"_environmentName": "Production", "on": false, "offVariation": 1, "fallthrough": {"variation": 1}},
+        "staging": {"_environmentName": "Staging", "on": false, "offVariation": 1, "fallthrough": {"variation": 1}},
+        "test": {"_environmentName": "Test", "on": false, "offVariation": 1, "fallthrough": {"variation": 1}}
+      }
+    }
+  }
+}

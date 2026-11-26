@@ -12,6 +12,7 @@ import type {
 import type { Editor, Result as EditorResult } from '../../bindings/github.com/primandproper/docent/internal/editor';
 import type { Entry } from '../../bindings/github.com/primandproper/docent/internal/gitsrc';
 import type { Card } from '../../bindings/github.com/primandproper/docent/internal/links';
+import type { Status as FlagStatus } from '../../bindings/github.com/primandproper/docent/internal/flags';
 import { backend } from './backend';
 
 export type {
@@ -81,6 +82,11 @@ export interface Api {
    * agreed. Go refuses unless every step was read first.
    */
   review(path: string, name: string): Promise<void>;
+  /**
+   * A feature flag's live status, for a flag card. `flag` and `project` are the card's own; where the answer comes
+   * from is the reader's configuration. `fresh` asks again even if an answer is remembered.
+   */
+  flagStatus(path: string, flag: string, project: string, fresh: boolean): Promise<FlagStatus>;
   /** Turns the body of a docent-links fence into cards, with variables filled in. */
   expandLinks(path: string, body: string): Promise<Card[]>;
   editors(): Promise<Editor[]>;

@@ -101,7 +101,7 @@ Run `docent schema` for the full JSON Schema.
 | `selection` | `{ "start": { "line", "character" }, "end": { "line", "character" } }` to highlight a range of lines instead of one. With a `pattern`, it moves with the match. |
 | `directory` | Show a folder's listing and README instead of a file. |
 | `uri` | Show a single web link instead of code. |
-| `links` | Link cards: `{ "kind", "title", "url", "description"? }`. |
+| `links` | Link cards: `{ "kind", "title", "url", "description"? }`. A `flag` card takes a `flag` in place of the `url`: see Links. |
 | `mapFocus` | Ids of the map nodes and edges this step is about. Give every step that touches a system one. |
 | `visual` | One animated visual, shown above the narrative. See below. |
 | `transition` | `"call"` when the step before highlights code that calls the function this step highlights. Moving between the two then animates: the function opens out of its call site. See below. |
@@ -206,7 +206,8 @@ The same object, with `"type": "sequence"` (or `flow`, `state`, `timeline`) adde
 ## Links
 
 Whenever the narrative mentions a metric, a log query, an alert, a runbook, a PR or an issue, add a link card so the
-reader can go and look. `kind` is one of `grafana`, `logs`, `traces`, `runbook`, `pr`, `issue`, `doc` or `url`.
+reader can go and look. `kind` is one of `grafana`, `logs`, `traces`, `runbook`, `pr`, `issue`, `doc`, `url` or
+`flag`.
 
 Never hard-code an environment or an internal hostname. Use `{{name}}` variables: declare ones the reader chooses
 between (like `env`) under the tour's `vars` with `choices` and a `default`, and leave hosts (like `grafana`) to the
@@ -237,6 +238,33 @@ Cards can also be written inside a body, where they appear in the flow of the te
 - { kind: runbook, title: Cache runbook, url: "{{wiki}}/runbooks/cache" }
 ```
 ````
+
+### Feature flags
+
+Wherever the code checks a feature flag, add a `flag` card with the flag's key exactly as the code spells it:
+
+```json
+{ "kind": "flag", "title": "New checkout flow", "flag": "new-checkout-flow" }
+```
+
+- `flag` is the key, not the flag's display name. It may hold letters, digits, `.`, `_` and `-`; anything else is the
+  error `flag-key-invalid`.
+- `url` is optional on a flag card. Leave it out and the card links to the flag's own page.
+- `project` is only for a flag that lives in a different LaunchDarkly project from the one the reader configured.
+- Never write a host, an environment or a token into a tour. Which environment is shown follows the reader's
+  variables (usually `env`), and where the flag is read from is the reader's own configuration.
+
+For a reader who has set LaunchDarkly up, the card shows what the flag is doing now: whether it is on, each rule in
+the order it is evaluated, the segments those rules name, what every rule serves (JSON values included), and the other
+environments. For everyone else it is an ordinary card. `docent validate` checks only the shape of the keys and never
+asks LaunchDarkly, so it can't tell you whether a flag exists: take the key from the code.
+
+Don't describe a flag's current state in the narrative ("this is on in production"): it will be wrong by next week,
+and the card says it live. Say what the flag chooses between.
+
+Flag status is experimental. A reader turns it on with `"experimental": { "integrations": true }` in
+`~/.config/docent/config.json`, stores a token with `docent integrations set launchdarkly`, and names the project and
+environment under `integrations.launchdarkly` in `docent.json`. `docent doctor` shows what is missing.
 
 ## Body files
 
@@ -282,6 +310,7 @@ a step anchors into. For each listed tour:
 | `body-missing` | The `body` path is wrong. It is relative to the tour file. |
 | `link-var-unresolved` | Declare the variable in `vars` with a default, or tell the person which value to configure. |
 | `link-scheme` | Not an http(s) URL. |
+| `flag-key-invalid` | A `flag` card has no `flag`, or its `flag` or `project` isn't a key. Use the key the code uses. |
 | `map-missing` | The `map` file path is wrong (it is relative to the tour file), or it isn't a flowchart. |
 | `map-focus-unknown` | A `mapFocus` id isn't a node, or an edge named with `id@`, in the map. |
 | `visual-invalid` | A visual doesn't match its schema or refers to an id it doesn't declare. The message says where. |

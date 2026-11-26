@@ -406,9 +406,25 @@
       "type": "object",
       "required": [
         "kind",
-        "title",
-        "url"
+        "title"
       ],
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "flag"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "flag"
+        ]
+      },
+      "else": {
+        "required": [
+          "url"
+        ]
+      },
       "properties": {
         "kind": {
           "enum": [
@@ -419,8 +435,19 @@
             "pr",
             "issue",
             "doc",
-            "url"
+            "url",
+            "flag"
           ]
+        },
+        "flag": {
+          "description": "For a flag card: the feature flag's key, as the code spells it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "project": {
+          "description": "For a flag card: the project the flag is in, when it isn't the configured one.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$"
         },
         "title": {
           "type": "string",

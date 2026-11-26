@@ -29,6 +29,6 @@ func run() int {
 	return cli.Execute(ctx, &cli.Options{
 		Assets:  assets,
 		Args:    os.Args[1:],
-		Streams: cli.Streams{Stdout: os.Stdout, Stderr: os.Stderr},
+		Streams: cli.Streams{Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin},
 	})
 }

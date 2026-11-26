@@ -7,9 +7,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
+	"github.com/primandproper/docent/internal/flags"
 	"github.com/primandproper/docent/internal/gitsrc"
 	"github.com/primandproper/docent/internal/links"
+	"github.com/primandproper/docent/internal/secrets"
 	"github.com/primandproper/docent/internal/tour"
 	"github.com/primandproper/docent/internal/validate"
 	"github.com/primandproper/docent/internal/walk"
@@ -32,6 +36,13 @@ type (
 		// Elsewhere lists the tours of the other folders that are open, when
 		// there are any, so a link into one of them can be checked.
 		Elsewhere func(ctx context.Context) ([]string, error)
+		// Secrets overrides the operating system's credential store. Tests
+		// set it, so they never touch the real one.
+		Secrets secrets.Store
+		// Flags overrides the provider flag cards read from. Tests set it.
+		Flags flags.Provider
+		// Getenv overrides os.Getenv. Tests set it.
+		Getenv func(string) string
 		// UserConfigPath overrides ~/.config/docent/config.json. Tests set it.
 		UserConfigPath string
 	}
@@ -47,6 +58,13 @@ type (
 		Repos     workspace.RepoResolver
 		Walker    walk.Walker
 		Validator validate.Validator
+		// Secrets is the credential store integrations keep their tokens in.
+		Secrets secrets.Store
+		// Flags reads feature flags for flag cards. It is nil while the
+		// integrations experiment is off: then nothing reaches the network.
+		Flags flags.Provider
+		// Getenv reads the environment.
+		Getenv func(string) string
 	}
 )
 
@@ -78,13 +96,39 @@ func New(opts *Options) (*Core, error) {
 
 	git := gitsrc.NewGit(opts.Logger, opts.TracerProvider)
 
+	getenv := opts.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+
+	store := opts.Secrets
+	if store == nil {
+		store = secrets.NewStore(opts.Logger, opts.TracerProvider)
+	}
+
 	c := &Core{
-		Config: config,
-		Vars:   links.NewVars(config, opts.VarFlags),
-		Store:  tour.NewStore(opts.Logger, opts.TracerProvider),
-		Source: git,
-		Git:    git,
-		Repos:  workspace.NewResolver(config, opts.Logger, opts.TracerProvider),
+		Secrets: store,
+		Getenv:  getenv,
+		Config:  config,
+		Vars:    links.NewVars(config, opts.VarFlags),
+		Store:   tour.NewStore(opts.Logger, opts.TracerProvider),
+		Source:  git,
+		Git:     git,
+		Repos:   workspace.NewResolver(config, opts.Logger, opts.TracerProvider),
+	}
+
+	if c.IntegrationsOn() {
+		if c.Flags = opts.Flags; c.Flags == nil {
+			c.Flags = flags.NewLaunchDarkly(&flags.LaunchDarklyConfig{
+				Host:           c.LaunchDarklyHost(),
+				Logger:         opts.Logger,
+				TracerProvider: opts.TracerProvider,
+				Token: func(ctx context.Context) (string, error) {
+					token, _, tokenErr := c.LaunchDarklyToken(ctx)
+					return token, tokenErr
+				},
+			})
+		}
 	}
 
 	c.Walker = walk.NewWalker(&walk.Dependencies{
@@ -125,6 +169,35 @@ func New(opts *Options) (*Core, error) {
 	c.Validator = validate.NewValidator(c.Store, c.Walker, discover, opts.Logger, opts.TracerProvider)
 
 	return c, nil
+}
+
+// IntegrationsOn reports whether the integrations experiment is switched on:
+// in the user config, or for this run in the environment.
+func (c *Core) IntegrationsOn() bool {
+	if c.Config.Experiment(workspace.ExperimentIntegrations) {
+		return true
+	}
+
+	names := strings.FieldsFunc(c.Getenv(workspace.ExperimentalEnvVar), func(r rune) bool { return r == ',' || r == ' ' })
+
+	return slices.Contains(names, workspace.ExperimentIntegrations)
+}
+
+// LaunchDarklyHost is where LaunchDarkly is asked: the environment's host,
+// then the user config's, or "" for LaunchDarkly's own. Never a workspace
+// file's or a tour's.
+func (c *Core) LaunchDarklyHost() string {
+	if host := c.Getenv(flags.LaunchDarklyHostEnvVar); host != "" {
+		return host
+	}
+
+	return c.Config.LaunchDarkly().Host
+}
+
+// LaunchDarklyToken finds the LaunchDarkly token and says where it was
+// found. Both are empty when there is none.
+func (c *Core) LaunchDarklyToken(ctx context.Context) (token, source string, err error) {
+	return secrets.Resolve(ctx, c.Secrets, c.Getenv, flags.LaunchDarklyTokenEnvVar, flags.LaunchDarkly)
 }
 
 // Close stops the helper processes the services started.

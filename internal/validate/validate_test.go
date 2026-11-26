@@ -2,6 +2,7 @@ package validate
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/primandproper/docent/internal/diag"
@@ -233,6 +234,73 @@ func TestValidator_Embeds(T *testing.T) {
 		test.StrContains(t, invalid[2], `link "Chat" has kind "slack"`)
 		test.StrContains(t, invalid[3], "link 2 needs a `title` and a `url`")
 		test.Eq(t, []string{`/steps/0/description links to step "nowhere", which this tour doesn't have`}, find(diags, diag.CodeStepLinkUnknown))
+	})
+}
+
+func TestValidator_FlagCards(T *testing.T) {
+	T.Parallel()
+
+	find := func(diags []diag.Diagnostic) []string {
+		var out []string
+
+		for i := range diags {
+			out = append(out, string(diags[i].Code)+" "+diags[i].Pointer+" "+diags[i].Message)
+		}
+
+		return out
+	}
+
+	T.Run("a flag card with a key and no url is clean, on a step and in a fence", func(t *testing.T) {
+		t.Parallel()
+
+		diags, err := newValidator(`{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "d\n\n`+"```"+`docent-links\n- { kind: flag, title: Tax, flag: async-tax-quotes }\n`+"```"+`",
+			  "links": [
+				{ "kind": "flag", "title": "New checkout", "flag": "new-checkout-flow" },
+				{ "kind": "flag", "title": "Billing", "flag": "invoice.v2_rollout", "project": "billing", "url": "https://wiki.example.com/flags" }
+			  ] }
+		]}`).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+		test.Len(t, 0, diags, test.Sprintf("%+v", diags))
+	})
+
+	T.Run("a missing or malformed key is an error where it is, and validation never asks the network", func(t *testing.T) {
+		t.Parallel()
+
+		diags, err := newValidator(`{"docent": 1, "title": "t", "steps": [
+			{ "id": "a", "description": "d\n\n`+"```"+`docent-links\n- { kind: flag, title: Tax, flag: \"a b\" }\n- { kind: flag, flag: x }\n`+"```"+`",
+			  "links": [
+				{ "kind": "flag", "title": "No key" },
+				{ "kind": "flag", "title": "Bad key", "flag": "../other" },
+				{ "kind": "flag", "title": "Bad project", "flag": "fine", "project": "a/b" }
+			  ] }
+		]}`).Tour(t.Context(), tourPath)
+		must.NoError(t, err)
+
+		var keys, fences []string
+
+		for _, d := range find(diags) {
+			switch {
+			case strings.HasPrefix(d, string(diag.CodeFlagKeyInvalid)):
+				keys = append(keys, d)
+			case strings.HasPrefix(d, string(diag.CodeVisualInvalid)):
+				fences = append(fences, d)
+			}
+		}
+
+		must.Len(t, 3, keys, must.Sprintf("%+v", find(diags)))
+		test.StrContains(t, keys[0], "/steps/0/links/0/flag link \"No key\": a flag card needs a `flag`")
+		test.StrContains(t, keys[1], "/steps/0/links/1/flag link \"Bad key\": `flag` must be a flag key")
+		test.StrContains(t, keys[2], "/steps/0/links/2/project link \"Bad project\": `project` must be a project key")
+
+		must.Len(t, 2, fences, must.Sprintf("%+v", find(diags)))
+		test.StrContains(t, fences[0], "link \"Tax\": `flag` must be a flag key")
+		test.StrContains(t, fences[1], "link 2 needs a `title` and a `flag`")
+
+		// A malformed key is not also reported as a bad URL.
+		for _, d := range find(diags) {
+			test.False(t, strings.HasPrefix(d, string(diag.CodeLinkScheme)), test.Sprint(d))
+		}
 	})
 }
 

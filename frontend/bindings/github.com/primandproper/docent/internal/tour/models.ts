@@ -35,6 +35,17 @@ export interface Link {
     "title": string;
     "url": string;
     "description": string;
+
+    /**
+     * Flag is the key of the feature flag a `flag` card is about.
+     */
+    "flag": string;
+
+    /**
+     * Project is the integration's project the flag is in, when it isn't
+     * the configured one.
+     */
+    "project": string;
 }
 
 /**

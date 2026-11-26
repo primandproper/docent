@@ -181,6 +181,12 @@ export enum Code {
      * this one.
      */
     CodeNextTourUnknown = "next-tour-unknown",
+
+    /**
+     * CodeFlagKeyInvalid: a `flag` link card has no `flag`, or its `flag` or
+     * `project` has characters a key can't have.
+     */
+    CodeFlagKeyInvalid = "flag-key-invalid",
 };
 
 /**

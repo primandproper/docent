@@ -1,6 +1,14 @@
 {
-  // The fixture workspace's own config: where the worker repo lives, and the
-  // hosts that tours leave as variables.
+  // The fixture workspace's own config: where the worker repo lives, the hosts
+  // that tours leave as variables, and which LaunchDarkly flags its flag cards
+  // are about.
   "repos": { "worker": "worker" },
-  "vars": { "grafana": "https://grafana.example.com" }
+  "vars": { "grafana": "https://grafana.example.com" },
+  "integrations": {
+    "launchdarkly": {
+      "project": "default",
+      "environment": "{{env}}",
+      "environments": { "prod": "production", "staging": "staging" }
+    }
+  }
 }

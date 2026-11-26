@@ -14,6 +14,8 @@ import (
 
 	"github.com/primandproper/docent/internal/anchor"
 	"github.com/primandproper/docent/internal/diag"
+	"github.com/primandproper/docent/internal/flags"
+	"github.com/primandproper/docent/internal/links"
 	"github.com/primandproper/docent/internal/tour"
 	"github.com/primandproper/docent/internal/visual"
 	"github.com/primandproper/docent/internal/walk"
@@ -273,6 +275,26 @@ func narrativeDiagnostics(t *tour.Tour, index int, step *walk.Step) []diag.Diagn
 			continue
 		}
 
+		// A flag card's keys are checked before its url is.
+		if raw := t.Steps[index].Links; i < len(raw) && raw[i].Kind == tour.LinkKindFlag && links.FlagProblem(&raw[i]) != "" {
+			pointer := "flag"
+			if raw[i].Flag != "" && flags.ValidKey(raw[i].Flag) {
+				pointer = "project"
+			}
+
+			out = append(out, diag.Diagnostic{
+				File:     t.Path,
+				Pointer:  diag.Pointer("steps", index, "links", i, pointer),
+				Step:     t.StepLabel(index),
+				Severity: diag.SeverityError,
+				Code:     diag.CodeFlagKeyInvalid,
+				Message:  fmt.Sprintf("link %q: %s", card.Title, strings.ToLower(card.Problem[:1])+card.Problem[1:]),
+				Hint:     "Use the flag's key exactly as the code spells it, such as `new-checkout-flow`.",
+			})
+
+			continue
+		}
+
 		d := diag.Diagnostic{
 			File:     t.Path,
 			Pointer:  diag.Pointer("steps", index, "links", i, "url"),
@@ -416,6 +438,13 @@ func fencedLinks(f *visual.Fence) []string {
 		link := &fenced[i]
 
 		switch {
+		case link.Kind == tour.LinkKindFlag && link.Title == "":
+			problems = append(problems, fmt.Sprintf("link %d needs a `title` and a `flag`", i+1))
+		case link.Kind == tour.LinkKindFlag:
+			// A flag card needs a flag, not a url.
+			if problem := links.FlagProblem(link); problem != "" {
+				problems = append(problems, fmt.Sprintf("link %q: %s", link.Title, strings.ToLower(problem[:1])+problem[1:]))
+			}
 		case link.Title == "" || link.URL == "":
 			problems = append(problems, fmt.Sprintf("link %d needs a `title` and a `url`", i+1))
 		case !slices.Contains(tour.LinkKinds, link.Kind):
@@ -452,7 +481,7 @@ func FencedLinks(body string) ([]tour.Link, error) {
 			return s
 		}
 
-		out = append(out, tour.Link{Kind: field("kind"), Title: field("title"), URL: field("url"), Description: field("description")})
+		out = append(out, tour.Link{Kind: field("kind"), Title: field("title"), URL: field("url"), Description: field("description"), Flag: field("flag"), Project: field("project")})
 	}
 
 	return out, nil

@@ -8,24 +8,10 @@ export interface Card {
     "kind": string;
     "title": string;
     "description": string;
-
-    /**
-     * URL is the expanded URL. It is only safe to open when Problem is empty.
-     */
     "url": string;
-
-    /**
-     * Host is the URL's host, shown on the card before anyone clicks it.
-     */
     "host": string;
-
-    /**
-     * Problem says why the card is disabled, or is empty.
-     */
     "problem": string;
-
-    /**
-     * Missing names the variables that have no value.
-     */
+    "flag": string;
+    "project": string;
     "missing": string[] | null;
 }

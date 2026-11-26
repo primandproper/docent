@@ -15,24 +15,52 @@ import (
 	"github.com/tailscale/hujson"
 )
 
-// FileName is the workspace file, looked for in the opened folder and then
-// each of its ancestors.
-const FileName = "docent.json"
+const (
+	// FileName is the workspace file, looked for in the opened folder and
+	// then each of its ancestors.
+	FileName = "docent.json"
+
+	// ExperimentIntegrations is the experiment that lets a `flag` card read
+	// a flag's status from LaunchDarkly.
+	ExperimentIntegrations = "integrations"
+	// ExperimentalEnvVar switches experiments on for one run: a
+	// comma-separated list of their names.
+	ExperimentalEnvVar = "DOCENT_EXPERIMENTAL"
+)
 
 type (
 	// File is the shape shared by the workspace file and the user config.
 	// Both are JSON with comments and trailing commas allowed.
 	File struct {
+		_            struct{}          `json:"-"`
+		Repos        map[string]string `json:"repos"`
+		Vars         map[string]string `json:"vars"`
+		Experimental map[string]bool   `json:"experimental"`
+		Integrations Integrations      `json:"integrations"`
+		Editors      Editors           `json:"editors"`
+		RepoRoots    []string          `json:"repoRoots"`
+		TourPaths    []string          `json:"tourPaths"`
+	}
+
+	// Integrations is the configuration of each integration.
+	Integrations struct {
+		_            struct{}     `json:"-"`
+		LaunchDarkly LaunchDarkly `json:"launchdarkly"`
+	}
+
+	// LaunchDarkly says which flags a `flag` card reads. There is no token
+	// here: that lives in the environment or the credential store.
+	LaunchDarkly struct {
 		_ struct{} `json:"-"`
-		// Repos maps a tour's logical repo name to a checkout.
-		Repos map[string]string `json:"repos"`
-		// Vars are values for link templates.
-		Vars    map[string]string `json:"vars"`
-		Editors Editors           `json:"editors"`
-		// RepoRoots are folders that hold checkouts side by side.
-		RepoRoots []string `json:"repoRoots"`
-		// TourPaths are extra places to look for tours.
-		TourPaths []string `json:"tourPaths"`
+		// Environments maps a value of Environment to a LaunchDarkly
+		// environment key, where the names differ.
+		Environments map[string]string `json:"environments"`
+		// Host is where requests go. Only the user config's is honored.
+		Host string `json:"host"`
+		// Project is the LaunchDarkly project a flag is looked up in.
+		Project string `json:"project"`
+		// Environment is a link template: "{{env}}" follows the variable picker.
+		Environment string `json:"environment"`
 	}
 
 	// Editors is the open-in-editor configuration.
@@ -283,4 +311,34 @@ func (r *EditorRule) matches(repo, relPath string) bool {
 	ok, err := doublestar.Match(r.Match, filepath.ToSlash(relPath))
 
 	return err == nil && ok
+}
+
+// LaunchDarkly is the integration as configured. Which flags are read is the
+// workspace file's to say before the user's, being the more specific. Where
+// they are read from is only ever the user's: a workspace file arrives with a
+// cloned repo, and a host from one could collect the reader's token.
+func (c *Config) LaunchDarkly() LaunchDarkly {
+	out := c.Workspace.Integrations.LaunchDarkly
+	user := c.User.Integrations.LaunchDarkly
+	out.Host = user.Host
+
+	if out.Project == "" {
+		out.Project = user.Project
+	}
+
+	if out.Environment == "" {
+		out.Environment = user.Environment
+	}
+
+	if len(out.Environments) == 0 {
+		out.Environments = user.Environments
+	}
+
+	return out
+}
+
+// Experiment reports whether the user config switches an unfinished feature
+// on. A workspace file can't: it would be a repo turning something on.
+func (c *Config) Experiment(name string) bool {
+	return c.User.Experimental[name]
 }

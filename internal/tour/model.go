@@ -11,8 +11,11 @@ import (
 // FormatVersion is the value of `docent` this build understands.
 const FormatVersion = 1
 
+// LinkKindFlag is the kind of card that names a feature flag instead of a URL.
+const LinkKindFlag = "flag"
+
 // LinkKinds are the kinds of link card.
-var LinkKinds = []string{"grafana", "logs", "traces", "runbook", "pr", "issue", "doc", "url"}
+var LinkKinds = []string{"grafana", "logs", "traces", "runbook", "pr", "issue", "doc", "url", LinkKindFlag}
 
 type (
 	// Tour is a parsed tour file. Fields from Docent's extensions are only
@@ -117,6 +120,11 @@ type (
 		Title       string   `json:"title"`
 		URL         string   `json:"url"`
 		Description string   `json:"description"`
+		// Flag is the key of the feature flag a `flag` card is about.
+		Flag string `json:"flag"`
+		// Project is the integration's project the flag is in, when it isn't
+		// the configured one.
+		Project string `json:"project"`
 	}
 
 	// Step is one stop on a tour.
