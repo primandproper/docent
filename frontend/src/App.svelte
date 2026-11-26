@@ -26,6 +26,8 @@
   function onkeydown(event: KeyboardEvent): void {
     if (event.metaKey && !event.shiftKey && !event.altKey && !event.ctrlKey) {
       if (event.key === 'r') {
+        // Asked for by hand, a reload also asks the integrations again.
+        session.flagEpoch++;
         void session.reload();
       } else if (event.key === 'o') {
         void session.addFolder();

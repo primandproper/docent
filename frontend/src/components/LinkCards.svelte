@@ -3,6 +3,7 @@
   import type { Card } from '../lib/api';
   import { parseInternal } from '../lib/internal';
   import { session } from '../lib/session.svelte';
+  import FlagCard from './FlagCard.svelte';
 
   let { cards }: { cards: Card[] } = $props();
 
@@ -19,13 +20,25 @@
   <ul class="links">
     {#each cards as card, i (i)}
       <li>
-        <!-- A card always shows where it goes before anyone clicks it. -->
-        <button class="link-card" disabled={!!card.problem} onclick={() => open(card)} title={card.problem || card.url}>
-          <span class="kind">{card.kind}</span>
-          <span class="title">{card.title}</span>
-          {#if card.description}<span class="about">{card.description}</span>{/if}
-          <span class="where">{card.problem || card.host || 'In this workspace'}</span>
-        </button>
+        {#if card.flag && session.view?.flagStatus}
+          <FlagCard {card} />
+        {:else}
+          <!-- A card always shows where it goes before anyone clicks it. -->
+          <button
+            class="link-card"
+            disabled={!!card.problem || !card.url}
+            onclick={() => open(card)}
+            title={card.problem || card.url}
+          >
+            <span class="kind">{card.kind}</span>
+            <span class="title">{card.title}</span>
+            {#if card.description}<span class="about">{card.description}</span>{/if}
+            <!-- A flag card with nowhere to go still says which flag it means. -->
+            <span class="where" class:plain={!card.problem}
+              >{card.problem || card.host || card.flag || 'In this workspace'}</span
+            >
+          </button>
+        {/if}
       </li>
     {/each}
   </ul>
@@ -91,5 +104,9 @@
 
   .link-card:disabled .where {
     color: var(--amber);
+  }
+
+  .link-card:disabled .where.plain {
+    color: var(--muted);
   }
 </style>

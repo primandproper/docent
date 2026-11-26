@@ -20,6 +20,7 @@ import (
 	"github.com/primandproper/docent/internal/core"
 	"github.com/primandproper/docent/internal/diag"
 	"github.com/primandproper/docent/internal/editor"
+	"github.com/primandproper/docent/internal/flags"
 	"github.com/primandproper/docent/internal/gitsrc"
 	"github.com/primandproper/docent/internal/library"
 	"github.com/primandproper/docent/internal/links"
@@ -150,6 +151,9 @@ type (
 		Review ReviewState `json:"review"`
 		// WorkingTree is set while files are read from disk, not at each ref.
 		WorkingTree bool `json:"workingTree"`
+		// FlagStatus is set when this tour's flag cards can show a flag's
+		// live status. When it isn't, they are plain link cards.
+		FlagStatus bool `json:"flagStatus"`
 	}
 
 	// ReviewState is what stands between the reader and marking a tour
@@ -535,6 +539,7 @@ func (s *Service) OpenTour(ctx context.Context, path string) (*TourView, error) 
 	view := &TourView{
 		Tour: t, Diagnostics: diags, Steps: make([]StepSummary, len(t.Steps)), Vars: s.vars(t),
 		Repos: make([]walk.RepoState, 0, len(t.Repos)), WorkingTree: workingTree,
+		FlagStatus: s.svc(path).Flags != nil,
 	}
 
 	if m := s.svc(path).Walker.Map(ctx, t); m != nil {
@@ -1022,6 +1027,46 @@ func (s *Service) ExpandLinks(ctx context.Context, path, body string) ([]links.C
 	}
 
 	return cards, nil
+}
+
+// FlagStatus reads a feature flag's live status for a `flag` link card.
+// The frontend hands over the card's two keys and nothing else: where the
+// request goes and what it carries come from the reader's own configuration,
+// never from the tour. Not knowing is an answer (a state), not an error.
+func (s *Service) FlagStatus(ctx context.Context, path, flag, project string, fresh bool) (flags.Status, error) {
+	ctx, span := s.tracer.StartSpan(ctx)
+	defer span.End()
+
+	logger := s.logger.WithValues(map[string]any{tourKey: path, "flag": flag})
+
+	s.mu.Lock()
+	t, ok := s.open[path]
+	s.mu.Unlock()
+
+	if !ok {
+		return flags.Status{}, observability.PrepareAndLogError(fmt.Errorf("%q is not open: %w", path, ErrUnknownTour), logger, span, "reading flag status")
+	}
+
+	svc := s.svc(path)
+	if svc.Flags == nil {
+		return flags.Empty(flags.StateDisabled, ""), nil
+	}
+
+	configured := svc.Config.LaunchDarkly()
+	settings := &flags.Settings{
+		Project:      configured.Project,
+		Environment:  svc.Vars.Fill(configured.Environment, t.Vars),
+		Environments: configured.Environments,
+	}
+
+	request, problem := settings.Request(project, flag)
+	if problem != "" {
+		return flags.Empty(flags.StateUnavailable, problem), nil
+	}
+
+	request.Fresh = fresh
+
+	return svc.Flags.Status(ctx, request), nil
 }
 
 // browseRoot finds where a step's code (or one of its extra anchors') is read

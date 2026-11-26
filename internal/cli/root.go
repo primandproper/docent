@@ -16,6 +16,7 @@ import (
 	"github.com/primandproper/docent/internal/app"
 	"github.com/primandproper/docent/internal/core"
 	"github.com/primandproper/docent/internal/logs"
+	"github.com/primandproper/docent/internal/secrets"
 	"github.com/primandproper/docent/internal/tour"
 	"github.com/primandproper/docent/internal/version"
 
@@ -43,6 +44,8 @@ type (
 		_      struct{}
 		Stdout io.Writer
 		Stderr io.Writer
+		// Stdin is where a secret is read from. Nil means there is none.
+		Stdin io.Reader
 	}
 
 	// exitError carries a specific exit code out of a command without
@@ -65,6 +68,11 @@ type (
 		// LibraryPath overrides ~/.config/docent/library.json, the folders
 		// the app was told to keep.
 		LibraryPath string
+		// Secrets overrides the operating system's credential store. Tests
+		// set it, so they never touch the real one.
+		Secrets secrets.Store
+		// Getenv overrides os.Getenv for what the services read. Tests set it.
+		Getenv func(string) string
 		// Args are the command-line arguments, without the program name.
 		Args []string
 	}
@@ -77,6 +85,8 @@ type (
 		tracerProvider tracing.Provider
 		logFile        io.Closer
 		systemLogger   *slog.Logger
+		secrets        secrets.Store
+		getenv         func(string) string
 		logDir         string
 		userConfigPath string
 		libraryPath    string
@@ -95,6 +105,8 @@ func Execute(ctx context.Context, opts *Options) int {
 		logDir:         opts.LogDir,
 		userConfigPath: opts.UserConfigPath,
 		libraryPath:    opts.LibraryPath,
+		secrets:        opts.Secrets,
+		getenv:         opts.Getenv,
 		tracerProvider: tracingnoop.NewTracerProvider(),
 	}
 	defer a.shutdown()
@@ -166,6 +178,7 @@ func (a *application) newRootCommand() *cobra.Command {
 		a.newSchemaCommand(),
 		a.newGuideCommand(),
 		a.newDoctorCommand(),
+		a.newIntegrationsCommand(),
 	)
 
 	return root
@@ -243,6 +256,8 @@ func (a *application) runApp(ctx context.Context, opts *app.Options) error {
 	opts.SystemLogger = a.systemLogger
 	opts.TracerProvider = a.tracerProvider
 	opts.LibraryPath = a.libraryPath
+	opts.Secrets = a.secrets
+	opts.Getenv = a.getenv
 
 	a.log().WithValues(map[string]any{"root": opts.Root, "tour": opts.Tour}).Info("opening app")
 
@@ -315,6 +330,8 @@ func (a *application) coreFor(root string) (*core.Core, error) {
 	return core.New(&core.Options{
 		Root:           root,
 		UserConfigPath: a.userConfigPath,
+		Secrets:        a.secrets,
+		Getenv:         a.getenv,
 		Logger:         a.log(),
 		TracerProvider: a.tracerProvider,
 	})

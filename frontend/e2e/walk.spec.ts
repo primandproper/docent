@@ -18,7 +18,7 @@ test.describe('tour picker', () => {
     await page.goto('/');
 
     const tours = page.locator('.tour');
-    await expect(tours).toHaveCount(6);
+    await expect(tours).toHaveCount(7);
     await expect(tours.nth(0)).toContainText(MAIN);
     await expect(tours.nth(0)).toContainText('1 problem');
     await expect(tours.nth(0)).toContainText('6 steps');
@@ -34,7 +34,7 @@ test.describe('tour picker', () => {
 
   test('filters with / and opens with the keyboard', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('.tour')).toHaveCount(6);
+    await expect(page.locator('.tour')).toHaveCount(7);
 
     await page.keyboard.press('/');
     await expect(page.getByRole('searchbox')).toBeFocused();
@@ -822,7 +822,7 @@ test.describe('opening from outside', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Add a folder to begin' })).toBeVisible();
     await page.getByRole('button', { name: 'Add a folder…' }).click();
     expect(await page.evaluate(() => window.gitActions)).toEqual(['add-folder']);
-    await expect(page.locator('.tour')).toHaveCount(6);
+    await expect(page.locator('.tour')).toHaveCount(7);
   });
 });
 
@@ -840,7 +840,7 @@ test.describe('several folders', () => {
 
     const workspace = page.getByRole('region', { name: 'workspace' });
     await expect(workspace).toContainText('Open for now');
-    await expect(workspace.locator('.tour')).toHaveCount(6);
+    await expect(workspace.locator('.tour')).toHaveCount(7);
 
     await page.getByRole('button', { name: 'Keep workspace' }).click();
     await expect(workspace).not.toContainText('Open for now');
@@ -873,7 +873,7 @@ test.describe('several folders', () => {
 
     await page.keyboard.press('Escape');
     await page.keyboard.press('/');
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       await page.keyboard.press('ArrowDown');
     }
     await page.keyboard.press('Enter');

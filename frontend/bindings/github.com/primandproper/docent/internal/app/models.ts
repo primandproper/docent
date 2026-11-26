@@ -291,6 +291,12 @@ export interface TourView {
      * WorkingTree is set while files are read from disk, not at each ref.
      */
     "workingTree": boolean;
+
+    /**
+     * FlagStatus is set when this tour's flag cards can show a flag's
+     * live status. When it isn't, they are plain link cards.
+     */
+    "flagStatus": boolean;
 }
 
 /**

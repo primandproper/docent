@@ -125,3 +125,71 @@ func TestNames(T *testing.T) {
 		test.Len(t, 0, Names("https://example.com/{not}/{{}}"))
 	})
 }
+
+func TestVars_Expand_flagCards(T *testing.T) {
+	T.Parallel()
+
+	v := NewVars(&workspace.Config{}, nil)
+
+	T.Run("a flag card needs no url, and carries its keys", func(t *testing.T) {
+		t.Parallel()
+
+		card := v.Expand(&tour.Link{Kind: tour.LinkKindFlag, Title: "New checkout", Flag: "new-checkout-flow", Project: "billing"}, nil)
+		test.Eq(t, "", card.Problem)
+		test.Eq(t, "new-checkout-flow", card.Flag)
+		test.Eq(t, "billing", card.Project)
+		test.Eq(t, "", card.URL)
+	})
+
+	T.Run("a url on a flag card is checked like any other", func(t *testing.T) {
+		t.Parallel()
+
+		card := v.Expand(&tour.Link{Kind: tour.LinkKindFlag, Title: "t", Flag: "f", URL: "https://wiki.example.com/flags/f"}, nil)
+		test.Eq(t, "", card.Problem)
+		test.Eq(t, "wiki.example.com", card.Host)
+
+		card = v.Expand(&tour.Link{Kind: tour.LinkKindFlag, Title: "t", Flag: "f", URL: "file:///etc/passwd"}, nil)
+		test.NotEq(t, "", card.Problem)
+	})
+
+	T.Run("a key that could leave its place in a URL is refused, and never handed on", func(t *testing.T) {
+		t.Parallel()
+
+		for _, link := range []tour.Link{
+			{Kind: tour.LinkKindFlag, Title: "t"},
+			{Kind: tour.LinkKindFlag, Title: "t", Flag: "../../segments/default/production/x"},
+			{Kind: tour.LinkKindFlag, Title: "t", Flag: "a b"},
+			{Kind: tour.LinkKindFlag, Title: "t", Flag: "f?env=production"},
+			{Kind: tour.LinkKindFlag, Title: "t", Flag: "f", Project: "default/../other"},
+		} {
+			card := v.Expand(&link, nil)
+			test.NotEq(t, "", card.Problem, test.Sprint(link.Flag))
+			test.Eq(t, "", card.Flag)
+			test.Eq(t, "", card.Project)
+		}
+	})
+
+	T.Run("the keys of a card that isn't a flag card are ignored", func(t *testing.T) {
+		t.Parallel()
+
+		card := v.Expand(&tour.Link{Kind: "doc", Title: "t", URL: "https://example.com", Flag: "f"}, nil)
+		test.Eq(t, "", card.Problem)
+		test.Eq(t, "", card.Flag)
+	})
+}
+
+func TestVars_Fill(T *testing.T) {
+	T.Parallel()
+
+	T.Run("variables are filled in, and one with no value becomes nothing", func(t *testing.T) {
+		t.Parallel()
+
+		v := NewVars(&workspace.Config{}, map[string]string{"env": "prod"})
+
+		test.Eq(t, "prod", v.Fill("{{env}}", nil))
+		test.Eq(t, "eu-prod", v.Fill("eu-{{ env }}", nil))
+		test.Eq(t, "production", v.Fill("production", nil))
+		test.Eq(t, "", v.Fill("{{nothing}}", nil))
+		test.Eq(t, "staging", NewVars(&workspace.Config{}, nil).Fill("{{env}}", []tour.Var{{Name: "env", Default: "staging"}}))
+	})
+}

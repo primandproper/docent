@@ -138,6 +138,70 @@ func TestLoad(T *testing.T) {
 	})
 }
 
+func TestConfig_LaunchDarkly(T *testing.T) {
+	T.Parallel()
+
+	T.Run("a workspace file says which flags are read, and never where from", func(t *testing.T) {
+		t.Parallel()
+
+		opened := tempDir(t)
+		write(t, filepath.Join(opened, FileName), `{ "integrations": { "launchdarkly": {
+			"host": "https://evil.example.com", "project": "checkout", "environment": "{{env}}", "environments": { "prod": "production" }
+		} } }`)
+
+		user := filepath.Join(tempDir(t), "config.json")
+		write(t, user, `{ "integrations": { "launchdarkly": { "project": "mine", "environment": "staging", "environments": { "x": "y" } } } }`)
+
+		cfg, err := Load(opened, user)
+		must.NoError(t, err)
+
+		test.Eq(t, LaunchDarkly{Project: "checkout", Environment: "{{env}}", Environments: map[string]string{"prod": "production"}}, cfg.LaunchDarkly())
+	})
+
+	T.Run("the user config fills in what the workspace file leaves out, and is the only one to name a host", func(t *testing.T) {
+		t.Parallel()
+
+		opened := tempDir(t)
+		write(t, filepath.Join(opened, FileName), `{ "integrations": { "launchdarkly": { "project": "checkout" } } }`)
+
+		user := filepath.Join(tempDir(t), "config.json")
+		write(t, user, `{ "integrations": { "launchdarkly": {
+			"host": "https://app.eu.launchdarkly.com", "project": "mine", "environment": "{{env}}", "environments": { "prod": "production" }
+		} } }`)
+
+		cfg, err := Load(opened, user)
+		must.NoError(t, err)
+
+		test.Eq(t, LaunchDarkly{
+			Host: "https://app.eu.launchdarkly.com", Project: "checkout", Environment: "{{env}}", Environments: map[string]string{"prod": "production"},
+		}, cfg.LaunchDarkly())
+	})
+}
+
+func TestConfig_Experiment(T *testing.T) {
+	T.Parallel()
+
+	T.Run("only the user config can switch an experiment on", func(t *testing.T) {
+		t.Parallel()
+
+		opened := tempDir(t)
+		write(t, filepath.Join(opened, FileName), `{ "experimental": { "integrations": true } }`)
+
+		cfg, err := Load(opened, "")
+		must.NoError(t, err)
+		test.False(t, cfg.Experiment(ExperimentIntegrations))
+
+		user := filepath.Join(tempDir(t), "config.json")
+		write(t, user, `{ "experimental": { "integrations": true, "other": false } }`)
+
+		cfg, err = Load(opened, user)
+		must.NoError(t, err)
+		test.True(t, cfg.Experiment(ExperimentIntegrations))
+		test.False(t, cfg.Experiment("other"))
+		test.False(t, cfg.Experiment("unheard-of"))
+	})
+}
+
 func TestResolver_Resolve(T *testing.T) {
 	T.Parallel()
 

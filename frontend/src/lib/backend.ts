@@ -23,6 +23,7 @@ export const backend: Api = {
   clone: (path, repo) => Service.Clone(path, repo),
   markRead: async (path, index) => required(await Service.MarkRead(path, index), 'review state'),
   review: (path, name) => Service.Review(path, name),
+  flagStatus: (path, flag, project, fresh) => Service.FlagStatus(path, flag, project, fresh),
   expandLinks: async (path, body) => (await Service.ExpandLinks(path, body)) ?? [],
   editors: async () => (await Service.Editors()) ?? [],
   openInEditor: async (path, index, extra, editorID) =>

@@ -11,6 +11,7 @@ import (
 	"github.com/primandproper/docent/internal/core"
 	"github.com/primandproper/docent/internal/editor"
 	"github.com/primandproper/docent/internal/library"
+	"github.com/primandproper/docent/internal/secrets"
 	"github.com/primandproper/docent/internal/tour"
 
 	"github.com/primandproper/primitives-go/v2/observability/logging"
@@ -48,6 +49,10 @@ type Options struct {
 	// Root is the absolute path of a folder to open beside the ones saved in
 	// the library, or "" for none, which is how the app starts from Finder.
 	Root string
+	// Secrets overrides the operating system's credential store, and Getenv
+	// the environment. Tests set them.
+	Secrets secrets.Store
+	Getenv  func(string) string
 	// LibraryPath overrides ~/.config/docent/library.json. Tests set it.
 	LibraryPath string
 	// Tour and Step name a tour to open straight away.
@@ -70,7 +75,7 @@ func Run(ctx context.Context, opts *Options) error {
 
 	// These services belong to no folder. Each folder that is opened gets a
 	// set of its own.
-	bare, err := core.New(&core.Options{VarFlags: opts.VarFlags, Logger: opts.Logger, TracerProvider: opts.TracerProvider})
+	bare, err := core.New(&core.Options{VarFlags: opts.VarFlags, Secrets: opts.Secrets, Getenv: opts.Getenv, Logger: opts.Logger, TracerProvider: opts.TracerProvider})
 	if err != nil {
 		return fmt.Errorf("setting up: %w", err)
 	}
@@ -85,6 +90,8 @@ func Run(ctx context.Context, opts *Options) error {
 			Root:           root,
 			VarFlags:       opts.VarFlags,
 			Elsewhere:      service.elsewhere(root),
+			Secrets:        opts.Secrets,
+			Getenv:         opts.Getenv,
 			Logger:         opts.Logger,
 			TracerProvider: opts.TracerProvider,
 		})

@@ -1,6 +1,7 @@
 // A recorded backend for browser tests: answers come from /fixture.json, which
 // cmd/tools/fixture writes by running the real Go service over a workspace.
 import { isExternalURL } from './api';
+import type { Status as FlagStatus } from './flags';
 import type {
   Api,
   Card,
@@ -29,6 +30,8 @@ interface Fixture {
   linkFences: Record<string, Record<string, Card[]>>;
   /** What, other than unread steps, stops each tour being reviewed, by tour path. '' when nothing does. */
   reviewProblems: Record<string, string>;
+  /** Each flag card's status, by tour path (or "path|name=value" for a picked variable) and then "flag|project". */
+  flags: Record<string, Record<string, FlagStatus>>;
 }
 
 declare global {
@@ -38,6 +41,8 @@ declare global {
     openedInEditor: { path: string; index: number; extra: number; editorID: string }[];
     copied: string[];
     gitActions: string[];
+    /** The flags whose status was asked for, in order. */
+    flagsAsked: string[];
     /** The recorded answers. Tests edit this, then call docentChanged, to stand in for a file changing. */
     docentFixture?: Fixture;
     docentChanged: () => void;
@@ -55,6 +60,7 @@ window.openedURLs = [];
 window.openedInEditor = [];
 window.copied = [];
 window.gitActions = [];
+window.flagsAsked = [];
 window.reviewed = [];
 
 const listeners = new Set<() => void>();
@@ -216,6 +222,15 @@ export const backend: Api = {
   },
   clone: async (_path, repo) => {
     window.gitActions.push(`clone ${repo}`);
+  },
+  flagStatus: async (path, flag, project, fresh) => {
+    window.flagsAsked.push(`${flag}${fresh ? ' (fresh)' : ''}`);
+    const pick = picks.get(path);
+    const status = (await fixture()).flags[pick ? `${path}|${pick}` : path]?.[`${flag}|${project}`];
+    if (!status) {
+      throw new Error(`flag ${flag} was not recorded in the fixture`);
+    }
+    return status;
   },
   expandLinks: async (path, body) => {
     const cards = (await fixture()).linkFences[path]?.[body];

@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Docent is a macOS desktop app and CLI, in one Go binary, for walking guided tours of code. `docs/design.md` is the
-product design and the source of truth for what gets built; milestones M0 to M5 are defined at its end.
+product design and the source of truth for what gets built; milestones M0 to M6 are defined at its end.
 
 ## Layout
 
@@ -29,7 +29,12 @@ product design and the source of truth for what gets built; milestones M0 to M5 
   checkouts (mapping, then sibling folder, then origin URL).
 - `internal/library`: `library.json`, the folders the reader added in the app. The only config-like file the app
   writes. The CLI never reads it, except `docent doctor` to print it.
-- `internal/links`: expands `{{var}}` link templates and refuses anything that isn't http(s).
+- `internal/links`: expands `{{var}}` link templates and refuses anything that isn't http(s). A `flag` card's keys
+  are checked here.
+- `internal/flags`: `Provider` reads a feature flag's status for a `flag` link card; `launchdarkly.go` is the one
+  implementation, and the only place an HTTP request is made. `flagstest` is a stand-in LaunchDarkly server for
+  tests and for the browser-test fixture.
+- `internal/secrets`: `Store`, the operating system's credential store, where an integration's token lives.
 - `internal/editor`: `Launcher`, open-in-editor with detection and fallback. Commands come from built-in presets or
   the user config only, never from a tour or a workspace file.
 - `internal/core`: wires the services for one opened folder. Every CLI command builds a `core.Core`; the app builds
@@ -99,6 +104,14 @@ make test_e2e ARGS=--ui # browser tests only
   best guess. Go errors are for failures that aren't about the tour.
 - Tours are untrusted input. Nothing from a tour is executed, fetched or allowed to read outside its root, and the
   production bundle ships a strict CSP (`frontend/vite.config.ts`).
+- An integration is the one thing that reaches the network besides git, and a tour never chooses where it goes. The
+  host and the token come only from the user config, the environment or the credential store: never from a tour or
+  `docent.json`. A tour supplies keys, and `flags.ValidKey` checks every key before it goes into a URL. The token is
+  never logged, written to a file, or returned to the frontend. Only the CLI stores it (`docent integrations set`).
+- Integrations are experimental: `core.Core.Flags` is nil unless the user config or `DOCENT_EXPERIMENTAL` switches
+  them on. While it is nil a `flag` card is a plain link card (`TourView.FlagStatus` tells the frontend which).
+- Tests never touch the real Keychain or the real LaunchDarkly: pass `secrets.Memory`, `Getenv` and `flags.Memory`
+  (or a `flagstest` server) through `core.Options` or `cli.Options`.
 - Each package's concrete type takes a logger and tracer provider and names itself with an `o11yName` const. Nil is
   fine for both (tests pass nil).
 - Go tests: `shoenig/test`, subtests always, `T`/`t` naming, parallel everywhere. In-memory fakes:

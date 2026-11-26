@@ -1,0 +1,55 @@
+{
+  "docent": 1,
+  "title": "Flags that steer the API",
+  "description": "Feature flags mentioned by the code, with what each is doing right now.",
+  "vars": { "env": { "choices": ["staging", "prod"], "default": "prod", "description": "Which environment's flags to show" } },
+  "steps": [
+    {
+      "id": "boolean",
+      "title": "A flag with rules",
+      "file": "api/internal/http/list.go",
+      "pattern": "^func \\(h \\*Handler\\) ListItems",
+      "line": 9,
+      "description": "Listing goes through the new checkout flow only for some people.",
+      "links": [
+        { "kind": "flag", "title": "New checkout flow", "flag": "new-checkout-flow" },
+        { "kind": "doc", "title": "Flag conventions", "url": "https://wiki.example.com/flags" }
+      ]
+    },
+    {
+      "id": "json",
+      "title": "A JSON value, for one segment",
+      "file": "api/internal/http/items.go",
+      "pattern": "^func \\(h \\*Handler\\) GetItem",
+      "line": 15,
+      "description": "The page layout is a JSON flag, and only a pilot segment gets the new one.",
+      "links": [
+        { "kind": "flag", "title": "One-page checkout", "flag": "one-page-checkout" }
+      ]
+    },
+    {
+      "id": "many",
+      "title": "Six rules deep",
+      "file": "api/internal/http/items.go",
+      "pattern": "^func \\(h \\*Handler\\) GetItem",
+      "line": 15,
+      "description": "Payment routing has a named account, six rules, three segments and a rollout.",
+      "links": [
+        { "kind": "flag", "title": "Payment routing", "flag": "payment-routing" }
+      ]
+    },
+    {
+      "id": "trouble",
+      "title": "Flags that have gone wrong",
+      "file": "api/internal/http/items.go",
+      "pattern": "^func \\(h \\*Handler\\) GetItem",
+      "line": 15,
+      "description": "One archived, one that no longer exists, one that can't be read. None stops the step.",
+      "links": [
+        { "kind": "flag", "title": "Legacy coupon path", "flag": "legacy-coupon-path" },
+        { "kind": "flag", "title": "One-click reorder", "flag": "one-click-reorder" },
+        { "kind": "flag", "title": "Express pay button", "flag": "express-pay-button" }
+      ]
+    }
+  ]
+}

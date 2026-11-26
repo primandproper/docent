@@ -10,6 +10,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as editor$0 from "../editor/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as flags$0 from "../flags/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as gitsrc$0 from "../gitsrc/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -76,6 +79,16 @@ export function ExpandLinks(path: string, body: string): $CancellablePromise<lin
  */
 export function Fetch(path: string, repo: string): $CancellablePromise<void> {
     return $Call.ByID(1623011496, path, repo);
+}
+
+/**
+ * FlagStatus reads a feature flag's live status for a `flag` link card.
+ * The frontend hands over the card's two keys and nothing else: where the
+ * request goes and what it carries come from the reader's own configuration,
+ * never from the tour. Not knowing is an answer (a state), not an error.
+ */
+export function FlagStatus(path: string, flag: string, project: string, fresh: boolean): $CancellablePromise<flags$0.Status> {
+    return $Call.ByID(581436028, path, flag, project, fresh);
 }
 
 /**

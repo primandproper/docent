@@ -92,6 +92,9 @@ const (
 	// CodeNextTourUnknown: `nextTour` is the title of no tour found beside
 	// this one.
 	CodeNextTourUnknown Code = "next-tour-unknown"
+	// CodeFlagKeyInvalid: a `flag` link card has no `flag`, or its `flag` or
+	// `project` has characters a key can't have.
+	CodeFlagKeyInvalid Code = "flag-key-invalid"
 )
 
 type (

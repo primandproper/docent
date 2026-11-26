@@ -17,11 +17,15 @@ import (
 
 	"github.com/primandproper/docent/internal/app"
 	"github.com/primandproper/docent/internal/core"
+	"github.com/primandproper/docent/internal/flags"
+	"github.com/primandproper/docent/internal/flags/flagstest"
 	"github.com/primandproper/docent/internal/gitsrc"
 	"github.com/primandproper/docent/internal/links"
 	"github.com/primandproper/docent/internal/orderedjson"
+	"github.com/primandproper/docent/internal/secrets"
 	"github.com/primandproper/docent/internal/tour"
 	"github.com/primandproper/docent/internal/visual"
+	"github.com/primandproper/docent/internal/workspace"
 )
 
 type (
@@ -43,8 +47,11 @@ type (
 		// ReviewProblems holds what stops each tour being reviewed once every
 		// step has been read, by tour path: "" when nothing does.
 		ReviewProblems map[string]string `json:"reviewProblems"`
-		Folders        []app.Folder      `json:"folders"`
-		Tours          []app.TourSummary `json:"tours"`
+		// Flags holds each flag card's status, keyed by tour path (or
+		// "path|name=value" for a picked variable) and then "flag|project".
+		Flags   map[string]map[string]flags.Status `json:"flags"`
+		Folders []app.Folder                       `json:"folders"`
+		Tours   []app.TourSummary                  `json:"tours"`
 	}
 
 	picked struct {
@@ -86,6 +93,7 @@ func run(ctx context.Context, testdata, output string) error {
 		Steps:          map[string][]*app.StepView{},
 		Picked:         map[string]picked{},
 		LinkFences:     map[string]map[string][]links.Card{},
+		Flags:          map[string]map[string]flags.Status{},
 		ReviewProblems: map[string]string{},
 		Listings:       map[string]map[string][]gitsrc.Entry{},
 		Files:          map[string]map[string]*app.FileView{},
@@ -120,11 +128,26 @@ func run(ctx context.Context, testdata, output string) error {
 // recordFolder records everything the service says about one folder's tours,
 // with the tours of the folder beside it there to be linked to.
 func recordFolder(ctx context.Context, root, beside string, out *fixture) error {
+	// Flag cards are answered by a stand-in for LaunchDarkly, through the
+	// real provider, so the fixture holds what the app would really be sent.
+	launchDarkly := flagstest.NewServer()
+	defer launchDarkly.Close()
+
 	services, err := core.New(&core.Options{
 		Root: root,
-		// The user's own config must not leak into a recorded fixture.
+		// The user's own config must not leak into a recorded fixture, nor
+		// their credential store or environment.
 		UserConfigPath: filepath.Join(root, "no-user-config.json"),
-		Elsewhere:      func(context.Context) ([]string, error) { return tour.Discover(beside) },
+		Secrets:        &secrets.Memory{},
+		Getenv: func(name string) string {
+			return map[string]string{workspace.ExperimentalEnvVar: workspace.ExperimentIntegrations}[name]
+		},
+		Flags: flags.NewLaunchDarkly(&flags.LaunchDarklyConfig{
+			Host:      launchDarkly.URL,
+			Transport: launchDarkly.Client().Transport,
+			Token:     func(context.Context) (string, error) { return flagstest.Token, nil },
+		}),
+		Elsewhere: func(context.Context) ([]string, error) { return tour.Discover(beside) },
 	})
 	if err != nil {
 		return fmt.Errorf("setting up %s: %w", root, err)
@@ -198,6 +221,10 @@ func recordFolder(ctx context.Context, root, beside string, out *fixture) error 
 			}
 		}
 
+		if out.Flags[path], err = recordFlags(ctx, service, path, steps, out.LinkFences[path], launchDarkly.URL); err != nil {
+			return err
+		}
+
 		for v := range view.Vars {
 			name := view.Vars[v].Name
 
@@ -212,6 +239,10 @@ func recordFolder(ctx context.Context, root, beside string, out *fixture) error 
 				}
 
 				out.Picked[path+"|"+name+"="+choice] = picked{View: pickedView, Steps: pickedSteps}
+
+				if out.Flags[path+"|"+name+"="+choice], err = recordFlags(ctx, service, path, pickedSteps, out.LinkFences[path], launchDarkly.URL); err != nil {
+					return err
+				}
 
 				if _, err = service.SetVar(ctx, path, name, ""); err != nil {
 					return fmt.Errorf("clearing %s: %w", name, err)
@@ -404,6 +435,45 @@ func record(ctx context.Context, service *app.Service, path string) (*app.TourVi
 	}
 
 	return view, steps, nil
+}
+
+// recordFlags records the status of every flag card a tour has, on its steps
+// and in its links fences, as the variables stand now. The stand-in's address
+// changes from run to run, so LaunchDarkly's own is written in its place.
+func recordFlags(ctx context.Context, service *app.Service, path string, steps []*app.StepView, fences map[string][]links.Card, serverURL string) (map[string]flags.Status, error) {
+	out := map[string]flags.Status{}
+
+	ask := func(cards []links.Card) error {
+		for i := range cards {
+			if cards[i].Flag == "" {
+				continue
+			}
+
+			status, err := service.FlagStatus(ctx, path, cards[i].Flag, cards[i].Project, false)
+			if err != nil {
+				return fmt.Errorf("reading flag %q of %q: %w", cards[i].Flag, path, err)
+			}
+
+			status.URL = strings.Replace(status.URL, serverURL, flags.LaunchDarklyDefaultHost, 1)
+			out[cards[i].Flag+"|"+cards[i].Project] = status
+		}
+
+		return nil
+	}
+
+	for _, step := range steps {
+		if err := ask(step.Links); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, cards := range fences {
+		if err := ask(cards); err != nil {
+			return nil, err
+		}
+	}
+
+	return out, nil
 }
 
 // recordTree walks the repo a step's code is in, the way the file drawer

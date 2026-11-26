@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/primandproper/docent/internal/editor"
+	"github.com/primandproper/docent/internal/flags"
 	"github.com/primandproper/docent/internal/library"
 	"github.com/primandproper/docent/internal/logs"
 	"github.com/primandproper/docent/internal/version"
@@ -22,7 +23,7 @@ import (
 func (a *application) newDoctorCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor [path]",
-		Short: "Show what Docent sees: config, repos, editors, git and the webview.",
+		Short: "Show what Docent sees: config, repos, editors, integrations, git and the webview.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := "."
@@ -123,6 +124,25 @@ func (a *application) doctor(ctx context.Context, path string) error {
 	line("installed", orNone(strings.Join(names, ", ")))
 	line("default", orNone(cfg.DefaultEditor()))
 	line("rules", fmt.Sprintf("%d in the workspace file, %d in the user config", len(cfg.Workspace.Editors.Rules), len(cfg.User.Editors.Rules)))
+
+	b.WriteString("\nintegrations: " + flags.LaunchDarkly + "\n")
+
+	rows := integrationRows(ctx, services, a.userConfigPath)
+	for i := range rows {
+		line(rows[i][0], rows[i][1])
+	}
+
+	ld := cfg.LaunchDarkly()
+	line("project", orNone(ld.Project))
+	line("environment", orNone(ld.Environment))
+
+	if len(ld.Environments) > 0 {
+		line("environments", describeEnvironments(ld.Environments))
+	}
+
+	if cfg.Workspace.Integrations.LaunchDarkly.Host != "" {
+		line("note", "the workspace file sets a LaunchDarkly host, which is ignored: only the user config or "+flags.LaunchDarklyHostEnvVar+" can")
+	}
 
 	b.WriteString("\ntours\n")
 

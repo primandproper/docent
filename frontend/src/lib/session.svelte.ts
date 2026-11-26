@@ -59,6 +59,9 @@ class Session {
   /** Counts navigations, so a slow answer for a step we already left is dropped. */
   private generation = 0;
 
+  /** Goes up each time the reader asks for a reload, which is when flag cards ask their integration afresh. */
+  flagEpoch = $state(0);
+
   get path(): string {
     return this.view?.tour?.path ?? '';
   }

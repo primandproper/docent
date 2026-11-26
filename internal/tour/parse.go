@@ -188,6 +188,8 @@ func decodeStepExtensions(step *Step, raw *orderedjson.Value) {
 			Title:       str(l, "title"),
 			URL:         str(l, "url"),
 			Description: str(l, "description"),
+			Flag:        str(l, "flag"),
+			Project:     str(l, "project"),
 		})
 	}
 

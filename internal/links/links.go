@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/primandproper/docent/internal/flags"
 	"github.com/primandproper/docent/internal/tour"
 	"github.com/primandproper/docent/internal/workspace"
 )
@@ -31,14 +32,12 @@ type (
 		Kind        string   `json:"kind"`
 		Title       string   `json:"title"`
 		Description string   `json:"description"`
-		// URL is the expanded URL. It is only safe to open when Problem is empty.
-		URL string `json:"url"`
-		// Host is the URL's host, shown on the card before anyone clicks it.
-		Host string `json:"host"`
-		// Problem says why the card is disabled, or is empty.
-		Problem string `json:"problem"`
-		// Missing names the variables that have no value.
-		Missing []string `json:"missing"`
+		URL         string   `json:"url"`
+		Host        string   `json:"host"`
+		Problem     string   `json:"problem"`
+		Flag        string   `json:"flag"`
+		Project     string   `json:"project"`
+		Missing     []string `json:"missing"`
 	}
 
 	// Vars answers what a link variable's value is. Sources are consulted in
@@ -54,8 +53,8 @@ type (
 )
 
 // NewVars returns a Vars over a configuration and the values given with --var.
-func NewVars(config *workspace.Config, flags map[string]string) *Vars {
-	return &Vars{config: config, flags: flags, picked: map[string]string{}}
+func NewVars(config *workspace.Config, given map[string]string) *Vars {
+	return &Vars{config: config, flags: given, picked: map[string]string{}}
 }
 
 // Pick records a value chosen in the app. An empty value clears the choice.
@@ -100,6 +99,34 @@ func (v *Vars) Lookup(name string, defined []tour.Var) (value, source string, ok
 	return "", "", false
 }
 
+// FlagProblem says what is wrong with a `flag` card's keys, or is empty. The
+// keys end up in a request's path, so only the characters a key can have are
+// allowed.
+func FlagProblem(link *tour.Link) string {
+	switch {
+	case link.Flag == "":
+		return "A flag card needs a `flag`: the flag's key"
+	case !flags.ValidKey(link.Flag):
+		return "`flag` must be a flag key: letters, digits, `.`, `_` and `-`"
+	case link.Project != "" && !flags.ValidKey(link.Project):
+		return "`project` must be a project key: letters, digits, `.`, `_` and `-`"
+	}
+
+	return ""
+}
+
+// Fill expands the variables in a template that isn't a link, such as an
+// integration's `environment`. A variable with no value becomes nothing.
+func (v *Vars) Fill(template string, defined []tour.Var) string {
+	return placeholder.ReplaceAllStringFunc(template, func(match string) string {
+		if value, _, ok := v.Lookup(placeholder.FindStringSubmatch(match)[1], defined); ok {
+			return value
+		}
+
+		return ""
+	})
+}
+
 // Names lists the distinct variables a template uses, in order of appearance.
 func Names(template string) []string {
 	var names []string
@@ -117,6 +144,20 @@ func Names(template string) []string {
 // missing variable or a URL that isn't http(s) comes back with Problem set.
 func (v *Vars) Expand(link *tour.Link, defined []tour.Var) Card {
 	card := Card{Kind: link.Kind, Title: link.Title, Description: link.Description, Missing: []string{}}
+
+	if link.Kind == tour.LinkKindFlag {
+		if card.Problem = FlagProblem(link); card.Problem != "" {
+			return card
+		}
+
+		card.Flag, card.Project = link.Flag, link.Project
+
+		// With no url of its own, the card links to the flag's page, which
+		// comes with its status.
+		if link.URL == "" {
+			return card
+		}
+	}
 
 	card.URL = placeholder.ReplaceAllStringFunc(link.URL, func(match string) string {
 		name := placeholder.FindStringSubmatch(match)[1]

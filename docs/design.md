@@ -22,7 +22,7 @@ Docent is a native desktop app (macOS only in v1) for walking guided tours of co
 
 - Learning mechanics such as quizzes, checkpoints or spaced repetition. Docent is a viewer.
 - Editing code, an LSP, or go-to-definition.
-- Embedded dashboards, live queries, or stored credentials.
+- Embedded dashboards or live queries. The one exception is a feature flag's status, read through an integration the reader set up (see Integrations). Credentials never live in a tour or a config file.
 - Author-supplied JavaScript or Svelte inside tours.
 - A hosted web version or a sharing service. Sharing is git.
 - Linux and Windows builds, and forges other than GitHub. Nothing in the design should preclude them later.
@@ -138,7 +138,7 @@ A tour is a CodeTour `.tour` JSON file with additive, flat fields; one file per 
 | `body` | path | A Markdown file, relative to the tour file, that Docent renders instead of `description`. `description` stays required and acts as the one-line summary CodeTour shows. |
 | `anchors` | Anchor\[\] | Extra code references shown as tabs: `{label, repo?, file, line?, selection?, pattern?}`. |
 | `mapFocus` | string\[\] | Map node and edge ids to highlight on this step. Edges are named in the map with Mermaid's own edge-id syntax (`api e1@--> queue`), so `e1` is the edge id. |
-| `links` | Link\[\] | Link cards: `{kind, title, url, description?}`. `kind` is one of `grafana`, `logs`, `traces`, `runbook`, `pr`, `issue`, `doc` or `url`. |
+| `links` | Link\[\] | Link cards: `{kind, title, url, description?}`. `kind` is one of `grafana`, `logs`, `traces`, `runbook`, `pr`, `issue`, `doc`, `url` or `flag`. A `flag` card names a feature flag instead of a URL: `{kind, title, flag, project?, url?, description?}` (see Integrations). |
 | `visual` | Visual | One structured visual (same schema as the `docent-*` fences) rendered above the narrative. |
 | `layout` | `split` \| `narrative` \| `code` | Pane-layout override. |
 | `transition` | `call` | Opt-in animation on arriving from the step before: that step's highlighted code calls the function this step highlights, and the function opens out of its call site. It only plays when the call is on screen. |
@@ -255,6 +255,78 @@ messages:
 
 - Template syntax: `{{name}}`. Values come from, in priority order: a CLI flag (`--var env=prod`), the in-app variable picker (a dropdown when `choices` is set), the workspace `vars`, user config `vars`, then the tour default.
 - Only `http`, `https` and `docent` schemes are allowed. A card with an unresolved variable renders disabled, with the missing name shown.
+- A `flag` card is the one card that can show more than a link: the flag's live status, when the reader has set up an integration (next section). Without one it is an ordinary card.
+
+## Integrations
+
+An integration lets a card show a live fact about the thing it links to. There is one, LaunchDarkly, which shows what a feature flag is doing. It is off until the reader sets it up, and nothing in a tour can turn it on or point it somewhere else.
+
+**Experimental for now.** The whole of it sits behind a switch: `"experimental": { "integrations": true }` in the user config, or `DOCENT_EXPERIMENTAL=integrations` for one run. A workspace file can't flip it. While it is off, a flag card is an ordinary link card, no provider is built, and nothing reaches the network. `docent integrations` and `docent doctor` say which way it is set.
+
+**Flag cards.** Tours of real code keep mentioning flags: "this path only runs when `new-checkout-flow` is on". A flag card names the flag, and Docent says what it is doing right now.
+
+```json
+{ "kind": "flag", "title": "New checkout flow", "flag": "new-checkout-flow" }
+```
+
+- "On" is not an answer by itself: a flag can be on and still serve the old path to nearly everyone. So the card's first line always says what the default is: "Production · On · 1 prerequisite, 3 named targets, 2 rules, then v1".
+- **How it decides** is a list in the order LaunchDarkly evaluates: prerequisite flags, contexts named one by one, each rule with its conditions in words, then everyone else. Each line ends in what it serves: a variation, or a percentage rollout drawn as a bar.
+- A variation is called by its name, and its value is shown as the result of the rule that serves it. A JSON value is laid out in full when the list is short, and is a one-line preview to click when it is long. Every variation side by side is a section that starts folded.
+- A segment a rule names is described under that rule: how many contexts it lists, how many it excludes, and its own conditions.
+- The card is about one environment, the one the reader's variables pick. The others are one line underneath: the environments the configuration names, then "+12 more (4 on)" to unfold. A flag with fourteen environments costs the same space as one with three.
+- The list starts unfolded when three or fewer things are decided before the default, and folded otherwise, so a six-rule flag doesn't push the narrative off the screen.
+- An off flag says who gets what, and shows its rules dimmed: "1 rule set up, not in effect".
+- **Archived** and **Not found** are states of their own. Not found is drift of its own kind: the tour describes a flag that has since been removed.
+- `project` on the card overrides the configured project, for a tour that crosses LaunchDarkly projects.
+- `url` is optional. With none, the card links to the flag's page at the configured host.
+- Whatever LaunchDarkly returns (a name, a description) is shown as plain text, never rendered as Markdown or HTML.
+
+**What a tour may say.** Identifiers, and nothing else.
+
+- `flag` and `project` must match `[A-Za-z0-9._-]+`. Docent builds the request from them in Go; a tour never supplies any part of a URL that a token is sent to.
+- The host and the token never come from a tour or from `docent.json`. Both arrive with a cloned repo, and either one choosing the host would let a stranger's file collect the reader's token.
+- The request goes to the configured host over `https`, and redirects are not followed.
+- What is left for a tour to do is cause a lookup of a flag key in a project the reader's token can already read, and the answer goes only to the reader's screen. LaunchDarkly learns which keys were looked up.
+
+**Configuration.** Under `integrations.launchdarkly`, in the same two files as everything else.
+
+```json
+{
+  "integrations": {
+    "launchdarkly": {
+      "host": "https://app.launchdarkly.com",
+      "project": "default",
+      "environment": "{{env}}",
+      "environments": { "prod": "production", "staging": "test" }
+    }
+  }
+}
+```
+
+| Setting | May be set in | Purpose |
+| --- | --- | --- |
+| `host` | User config, or `DOCENT_LAUNCHDARKLY_HOST` | Where requests go. Defaults to `https://app.launchdarkly.com`; set it for the EU and federal instances. Ignored in `docent.json`, and `docent doctor` says so when it finds one there. |
+| `project` | `docent.json`, user config | The LaunchDarkly project a flag is looked up in, unless the card names one. |
+| `environment` | `docent.json`, user config | Which environment's status to show. It is a link template, so `{{env}}` makes the badge follow the variable picker. |
+| `environments` | `docent.json`, user config | Maps a value of that template to a LaunchDarkly environment key, where the names differ. |
+
+A team shares `project`, `environment` and `environments` through `docent.json`. They only choose which flag is read at the host the reader chose, so they are safe to take from a repo.
+
+**The token.** A LaunchDarkly access token, which should have the read-only Reader role. Docent looks for it in two places, in order:
+
+1. `DOCENT_LAUNCHDARKLY_TOKEN` in the environment. This is the override, and the answer on a machine with no credential store, such as a headless Linux box.
+2. The operating system's credential store: the Keychain on macOS, the Secret Service on Linux, the Credential Manager on Windows. `docent integrations set launchdarkly` puts it there, reading it from a prompt or stdin and never from an argument, so it stays out of shell history. `docent integrations remove launchdarkly` deletes it.
+
+- The token is never written to a config file, never logged, and never sent to the webview. The app only reads it; storing and removing it are CLI commands, and `app.Service` has no method that touches the store.
+- A stored token is found however the app was started. An environment variable is only seen when the app was started from a shell that has it (`docent .`), not from Finder, the Dock or a `docent://` link.
+- The store is an interface (`secrets.Store`) over `zalando/go-keyring`, which already speaks to all three platforms' stores, so Linux and Windows need a build, not a redesign. Only macOS is exercised today. On macOS it hands the token to `/usr/bin/security` on standard input, never as an argument.
+- A stored token is readable by anything running as the reader, as an environment variable is. The gain is that it isn't sitting in a dotfile or a shell profile.
+
+**When Docent asks.** Setting up the integration is the consent; there is no prompt per tour. With a token present, Docent reads a flag's status when a step with a flag card is shown, with a short timeout, and remembers the answer for a minute. `⌘R` asks again. One flag is two requests (the picked environment in full, then every environment in brief) plus one for each segment its rules name, six at most. A segment's key comes from LaunchDarkly's answer and is checked like a tour's before it goes into a URL. With no token, opening a tour reaches no network, exactly as before.
+
+**When it can't.** A flag card never fails a step. With no token it is a plain card with a note naming what would turn the badge on. A refused token, a rate limit, a missing `project` or `environment`, or no network gives **Status unavailable** with the reason. The CLI never asks at all: `docent validate` checks the shape of `flag` and `project` and stays offline, so its answers don't depend on a token or on LaunchDarkly being up.
+
+**More integrations later.** LaunchDarkly sits behind a small interface (`flags.Provider`: a project, a flag key and an environment in, a status out). A second flag service is a second implementation chosen by which block is configured. There is deliberately no generic "fetch this URL and read this field" integration: every integration is code in Docent that knows which host it talks to and what it sends.
 
 ## Architecture
 
@@ -274,6 +346,8 @@ The bindings layer is the trust boundary. The CLI skips it and calls the same se
 | `gitsrc` | `FileSource` | Read file bytes at a ref or from the working tree. Keep one long-lived `git cat-file --batch` process per repo rather than using go-git, for fidelity with partial clones and worktrees. |
 | `anchor` | `AnchorResolver` | Turn `line`, `selection` and `pattern` into concrete ranges plus a drift status. |
 | `links` | `Expander` | Expand `{{var}}` templates and enforce the allowed schemes. |
+| `flags` | `Provider` | Read a feature flag's status from a configured integration. The only package that makes an HTTP request. |
+| `secrets` | `Store` | Get, set and delete an integration's token in the operating system's credential store. |
 | `editor` | `Launcher` | Run the open-in-editor template with arguments as an argv list, never through a shell. |
 | `app` | (Wails services) | A thin binding layer. It validates every argument coming from the frontend, even though the frontend validated it too. |
 | `cli` | (none) | Headless commands; never starts the webview. |
@@ -304,7 +378,8 @@ Agents author through the CLI and files; people review in the app. The app never
 | `docent stamp <tour> [--hashes]` | Move each repo's `stamp` to the commit its `ref` resolves to now. `--hashes` also records `contentHash` on each anchor at that commit (see drift). Moving a stamp without `--hashes` clears the old hashes, because a hash describes the code at its stamp. |
 | `docent review <tour> --name <n>` | Append a `reviewedBy` entry at the current refs, and refresh stamps and hashes as `docent stamp --hashes` does. |
 | `docent schema` / `docent guide` | Print the JSON Schema or the agent authoring guide. |
-| `docent doctor` | Diagnose config, repos, git and webview. |
+| `docent doctor` | Diagnose config, repos, git, webview and integrations. For a token it says where it was found (environment, credential store) or that it is not set, and never prints it. |
+| `docent integrations [set\|remove] <name>` | List the integrations and whether each has a token; store one in the credential store, read from a prompt or stdin; or remove it. |
 | docent stale \[--json\] \[--max-commits N\] \[--max-days N\] | List tours that have fallen behind their tracked refs or have drifted anchors, with the stamp-to-tip diff for each anchored file. This is the input for an agent refresh. |
 
 **`--json` diagnostics** are a stable contract: `{file, pointer, step, severity, code, message, hint}`, where `pointer` is an RFC 6901 JSON Pointer such as `/steps/3/pattern`. Error codes are documented and never reused.
@@ -316,6 +391,7 @@ Agents author through the CLI and files; people review in the app. The app never
 - Write the system map first, naming every edge a step will focus (`api e1@--> queue`); give every step a `mapFocus`.
 - Anchor with `pattern` plus `line`; never guess a line number; run `docent resolve` on every step.
 - Add a link card wherever a metric, log or alert is mentioned, using `vars` instead of hard-coded environments.
+- Add a `flag` card wherever the code checks a feature flag, with the flag's key exactly as the code spells it.
 - Use a `docent-*` visual when order or timing matters (async hops, retries, state changes) and Mermaid for structure.
 - Set `generatedBy`; never set `reviewedBy`.
 - Loop on `docent validate --json` until clean.
@@ -359,14 +435,15 @@ All paths are validated to stay inside their repo root after cleaning and symlin
 
 ## Security, distribution and packaging
 
-Tours are untrusted input from teammates, agents and strangers, so opening one must never run code or reach the network.
+Tours are untrusted input from teammates, agents and strangers, so opening one must never run code, and a tour must never choose where a request goes or what it carries.
 
 **Security rules**
 
 - No execution from tours: CodeTour `commands` and `when` are ignored, there are no script embeds, and the editor template comes only from user config.
 - Markdown is sanitized and Mermaid runs at `securityLevel: strict`.
 - Links open only `http`/`https` in the system browser. A card always shows its resolved host before you click it.
-- No network access except a `git fetch` or `git clone` that Docent offers and the reader confirms.
+- Network access is two things only. One is a `git fetch` or `git clone` that Docent offers and the reader confirms. The other is a read from an integration the reader set up, at the host the reader configured, carrying only identifiers Docent validated (see Integrations). With no integration set up, opening a tour reaches no network.
+- A credential is read from the environment or the operating system's credential store, never from a tour, `docent.json` or `config.json`, and it never reaches the webview or a log. Only a CLI command stores one.
 - File reads are confined to resolved repo roots (see drift).
 - The webview runs a strict CSP: no remote scripts, no iframes. The [Wails 3.0.0 notes](https://newreleases.io/project/github/wailsapp/wails/release/v3.0.0) say one advisory about cross-origin child frames on Linux is only partly fixed, and Docent uses no iframes.
 
@@ -391,7 +468,7 @@ Automate steps 3–6 in a GitHub Actions workflow on tag push, with the certific
 
 ## Milestones and acceptance criteria
 
-Six milestones, each shippable and ending in something you can use daily. Build them in order; M3 and M4 can run in parallel.
+Seven milestones, each shippable and ending in something you can use daily. Build them in order; M3 and M4 can run in parallel. M0 to M5 are v1; M6 follows it.
 
 1. **M0: Skeleton.** The Wails app and CLI in one binary; the tour parser with unknown-field preservation; `docent validate`; single-repo walking; the code pane with Shiki; the step rail; keyboard navigation.
    - Done when: a corpus of at least 20 real-world `.tour` files from public repos opens and walks with zero parse errors.
@@ -406,6 +483,10 @@ Six milestones, each shippable and ending in something you can use daily. Build 
    - Done when: an agent given only `docent guide` and three repos produces a tour that passes `validate --strict` with no human edits.
 6. **M5: Ship.** Signing, notarization, the tap and cask, `docent doctor`.
    - Done when: `brew install --cask` on a clean Mac yields a working app and `docent` on the PATH.
+7. **M6: Integrations.** `flag` cards, the LaunchDarkly provider, `secrets.Store` on the Keychain, `docent integrations`, and the token and host in `docent doctor`, all behind the `integrations` experiment.
+   - Done when: it has been walked against a real LaunchDarkly project and the experiment switch can be removed.
+   - Done when: against a fake LaunchDarkly server, a fixture tour's flag cards show on, off, archived, not found and unavailable, and a plain card with no token.
+   - Done when: tests prove that neither a tour nor `docent.json` can change the host a token is sent to, and that the token never appears in a log or in anything returned to the frontend.
 
 **After v1** (in rough priority order): symbol anchors via tree-sitter (`symbol: "Handler.UpdateItem"`), which hold up better than regex; diff steps (`diff: {base, head}`) for PR tours; a `docent mcp` server exposing validate and resolve; `docent fix`; sandboxed custom visual components; GitLab and Forgejo permalinks; Linux; Windows.
 
@@ -426,6 +507,18 @@ Decided on Nov 16, 2026:
 | Observability | primitives-go's `observability` package. |
 | Signing | Apple Developer Program membership is in place; first Homebrew distribution follows the playbook above. |
 | GitHub host | github.com only. Permalinks use https://github.com/{owner}/{repo}/blob/{sha}/{path}#L{start}-L{end}, built from the resolved commit SHA rather than the branch name, so links don't drift. GitHub Enterprise Server hosts are post-v1. |
+
+Decided on Nov 25, 2026:
+
+| Question | Decision |
+| --- | --- |
+| May Docent reach the network for anything but git? | Yes, for an integration the reader set up. The rule that matters was never "no network" but "a tour never chooses where a request goes": the host and token come only from the reader, and a tour supplies validated identifiers. |
+| Where does an integration's token live? | The environment variable first, then the operating system's credential store (the Keychain on macOS), behind `secrets.Store` so Linux and Windows can be added. Never a config file. |
+| Who stores the token? | The CLI (`docent integrations set`). The app only reads it, so "the app never writes config" stands unchanged. |
+| Is a lookup confirmed each time? | No. Setting up the integration is the consent; a flag is read when its step is shown. |
+| How general are integrations? | One provider interface with LaunchDarkly as the only implementation. No generic fetch-a-URL integration. |
+| What does a flag card show? | How the flag decides in one environment, in evaluation order, with what each rule serves. Chosen over a status badge (too little: "on" alone misleads) and a grid of every environment (no room for JSON values, segments or rules, and no good with many environments). |
+| How does it ship? | Behind the `integrations` experiment, off by default, so it can be tried on real tours before it is promised. |
 
 ## Sources
 
